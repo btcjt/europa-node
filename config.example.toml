@@ -36,7 +36,16 @@ endpoint_port = 51820
 # Paste the contents of server.pub here.
 server_pubkey = "REPLACE_WITH_SERVER_PUBKEY"
 # Subnet the operator hands out to clients. /24 = 253 usable IPs.
-subnet_cidr = "10.42.0.0/24"
+# Pick a private CIDR that does NOT collide with anything else on
+# the host. The most common silent breakage is K3s' default Flannel
+# pod network at 10.42.0.0/24 — if you use the same /24 here, the
+# kernel has both `wg0` and `cni0` claiming it and client return
+# traffic gets matched to cni0 instead of wg0 (the symptom: handshake
+# succeeds, the client sends KiB but receives only the keepalive
+# bytes back). Other collisions to watch for: docker0 (172.17.0.0/16),
+# Tailscale (100.64.0.0/10), your LAN (192.168.x.0/24, 10.0.0.0/24).
+# Verify with `ip route show` on the pinned host.
+subnet_cidr = "10.66.42.0/24"
 dns = ["1.1.1.1", "9.9.9.9"]
 
 # ── Lightning backend ────────────────────────────────────────────────

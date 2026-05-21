@@ -77,7 +77,7 @@ wg genkey | tee /etc/wireguard/server.key | wg pubkey > /etc/wireguard/server.pu
 ```ini
 [Interface]
 PrivateKey = <contents of /etc/wireguard/server.key>
-Address = 10.42.0.1/24
+Address = 10.66.42.1/24
 ListenPort = 51820
 
 # IP forwarding and NAT
@@ -88,6 +88,8 @@ PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING 
 ```
 
 Replace `eth0` with the host's actual external interface (`ip route show default` to find it).
+
+The `10.66.42.0/24` choice is deliberate: it avoids the most common collision, K3s' Flannel CNI defaults to `10.42.0.0/24` for the pod network and the older recipe of `Address = 10.42.0.1/24` here silently breaks return routing (the kernel has both `wg0` and `cni0` claiming the same /24, and client reply packets get matched to `cni0`). Pick any private CIDR you like that's free on your host; just check `ip route show` first.
 
 **Enable IP forwarding:**
 

@@ -47,7 +47,7 @@ sudo install -m 600 ./secrets/wg-server.key /etc/wireguard/server.key
 sudo tee /etc/wireguard/wg0.conf <<CONF
 [Interface]
 PrivateKey = $(sudo cat /etc/wireguard/server.key)
-Address    = 10.42.0.1/24
+Address    = 10.66.42.1/24
 ListenPort = 51820
 PostUp     = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o $DEFIFACE -j MASQUERADE
 PostDown   = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o $DEFIFACE -j MASQUERADE
@@ -142,7 +142,7 @@ Key fields:
 | ----- | ------- |
 | `server.public_host` | Your hostname (must resolve publicly + match TLS cert) |
 | `wireguard.endpoint_host` / `endpoint_port` | What clients dial |
-| `wireguard.subnet_cidr` | Tunnel subnet (default `10.42.0.0/24`, 253 peers) |
+| `wireguard.subnet_cidr` | Tunnel subnet (default `10.66.42.0/24`, /24 = 253 peers). Must not collide with `cni0` (K3s' Flannel defaults to `10.42.0.0/24` — silently breaks return routing if you reuse it), `docker0` (`172.17.0.0/16`), Tailscale (`100.64.0.0/10`), or your home LAN. |
 | `lightning.backend` + `base_url` + `api_token` | phoenixd / LND / stub |
 | `cashu.mint_url` + `p2pk_privkey_hex` | Your accepted Cashu mint + lock key |
 | `nostr.relays` | Where you publish the listing |
@@ -355,6 +355,12 @@ not implemented here. Pull requests welcome.
   bare-metal and AWS Nitro use `enp0s31f6` / `wlp3s0` / `ens5` etc.
   Detect with `ip route show default | awk '{print $5; exit}'` and
   use that. The Quick start above does it dynamically.
+- **Don't reuse a CIDR that's already on the host.** The default
+  `subnet_cidr` is `10.66.42.0/24` for a reason — the obvious-looking
+  `10.42.0.0/24` collides with K3s' Flannel pod network and silently
+  breaks return routing (handshake succeeds, client sends KiB, only
+  the keepalive comes back). If you change the subnet, verify with
+  `ip route show` that nothing else on the host already claims it.
 - **K8s `kubectl apply` Warning about PodSecurity** — you'll see
   *"would violate PodSecurity 'baseline:latest'"* when applying the
   Deployment. That's the namespace's *warn* setting talking; the

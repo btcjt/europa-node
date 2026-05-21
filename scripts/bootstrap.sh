@@ -177,7 +177,7 @@ interface = "wg0"
 endpoint_host = "$PUBLIC_HOST"
 endpoint_port = 51820
 server_pubkey = "$WG_SERVER_PUBKEY"
-subnet_cidr = "10.42.0.0/24"
+subnet_cidr = "10.66.42.0/24"
 dns = ["1.1.1.1", "9.9.9.9"]
 
 [lightning]
