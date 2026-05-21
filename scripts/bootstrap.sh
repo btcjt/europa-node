@@ -13,14 +13,20 @@
 # secret. If you re-run it after a partial failure, delete the file
 # the script complains about and try again.
 #
-# Requires: wg, openssl, awk, sed. On Debian/Ubuntu:
-#   sudo apt install wireguard-tools openssl
+# Requires: wg, openssl, awk, sed. Optional but recommended: node (used
+# to auto-derive the Cashu P2PK pubkey from the generated privkey).
+#   Debian/Ubuntu:  sudo apt install wireguard-tools openssl nodejs
+#   macOS (Homebrew): brew install wireguard-tools openssl node
 #
 # Usage:
 #   ./scripts/bootstrap.sh           # interactive — prompts for hostname etc.
+#
+#   # Non-interactive — all six prompts must be supplied as env vars or
+#   # `read` will block waiting on stdin:
 #   PUBLIC_HOST=vpn.example.com \
+#   D_TAG=my-node TITLE="My Europa Node" \
 #   COUNTRY=US REGION=US-East GEOHASH=dr5regw \
-#     ./scripts/bootstrap.sh         # non-interactive
+#     ./scripts/bootstrap.sh
 set -euo pipefail
 
 # ── Paths ───────────────────────────────────────────────────────────
@@ -86,22 +92,60 @@ P2PK_PUB_FILE="$SECRETS_DIR/cashu-p2pk.pub"
 if [ -f "$P2PK_PRIV" ]; then
   echo "✓ Cashu P2PK key already at $P2PK_PRIV"
 else
-  # Generate ephemeral EC keypair, extract raw bytes.
+  # Generate a secp256k1 private key. The 32-byte privkey scalar
+  # lives inside the DER SEC1 encoding at a known offset (after the
+  # 7-byte header `30 LL 02 01 01 04 20`). Extract it precisely with
+  # `dd skip=7 count=32` — earlier versions of this script used
+  # `head -c 64 | tail -c 32` which picks bytes 32..63 and lands in
+  # the OID block, producing a "privkey" that wasn't the key openssl
+  # actually generated. Worked by accident (32 random bytes is a valid
+  # scalar with overwhelming probability) but was confusing if anyone
+  # ever tried to import the key into another tool.
   openssl ecparam -name secp256k1 -genkey -noout 2>/dev/null \
     | openssl ec -outform DER 2>/dev/null \
-    | head -c 64 | tail -c 32 \
+    | dd bs=1 skip=7 count=32 2>/dev/null \
     | xxd -p -c 32 > "$P2PK_PRIV"
   chmod 600 "$P2PK_PRIV"
-  # The simple way to derive the compressed pubkey from a hex privkey
-  # is via a small openssl wrapper or a node one-liner; we prompt
-  # the operator to derive it once with a tool of their choice.
   echo "✓ generated Cashu P2PK private key (hex) at $P2PK_PRIV"
-  echo "  Derive the compressed-form public key once with:"
-  echo "    npm exec -y --package=@noble/secp256k1 -- node -e \\"
-  echo "      \"const s = require('@noble/secp256k1'); const k = require('fs').readFileSync('$P2PK_PRIV','utf8').trim(); console.log('02' + Buffer.from(s.getPublicKey(k, true)).slice(1).toString('hex'));\""
-  echo "  and write the resulting line to $P2PK_PUB_FILE."
 fi
-P2PK_PUB="$(cat "$P2PK_PUB_FILE" 2>/dev/null || echo "REPLACE_WITH_P2PK_PUBKEY")"
+
+# Derive the compressed-form (33-byte) public key whenever the .pub
+# file is missing — covers both fresh runs and an old workspace where
+# the previous bootstrap left only the privkey behind.
+if [ ! -f "$P2PK_PUB_FILE" ]; then
+  if command -v node >/dev/null 2>&1; then
+    P2PK_DERIVE_DIR="${TMPDIR:-/tmp}/europa-node-p2pk-derive.$$"
+    mkdir -p "$P2PK_DERIVE_DIR"
+    (
+      cd "$P2PK_DERIVE_DIR"
+      npm init -y >/dev/null 2>&1
+      npm install --silent @noble/secp256k1@2 >/dev/null 2>&1
+    )
+    P2PK_PUB="$(cd "$P2PK_DERIVE_DIR" && node -e "
+      const secp = require('@noble/secp256k1');
+      const fs = require('fs');
+      const priv = fs.readFileSync('$P2PK_PRIV', 'utf8').trim();
+      // getPublicKey(_, true) returns the full 33-byte compressed
+      // form (02/03 prefix + 32-byte X). Don't slice and don't
+      // hardcode '02' — the prefix encodes Y parity and is part of
+      // the pubkey.
+      process.stdout.write(Buffer.from(secp.getPublicKey(priv, true)).toString('hex'));
+    ")"
+    rm -rf "$P2PK_DERIVE_DIR"
+    echo "$P2PK_PUB" > "$P2PK_PUB_FILE"
+    chmod 644 "$P2PK_PUB_FILE"
+    echo "✓ derived Cashu P2PK pubkey to $P2PK_PUB_FILE"
+  else
+    echo "⚠ node not installed — can't auto-derive the P2PK pubkey."
+    echo "  Install node (Debian/Ubuntu: 'sudo apt install nodejs') and re-run,"
+    echo "  or derive manually with any secp256k1 library and write the 66-char"
+    echo "  compressed-form hex (02/03 prefix + 32-byte X) to:"
+    echo "    $P2PK_PUB_FILE"
+    P2PK_PUB="REPLACE_WITH_P2PK_PUBKEY"
+  fi
+else
+  P2PK_PUB="$(cat "$P2PK_PUB_FILE")"
+fi
 
 # ── Write config.toml ──────────────────────────────────────────────
 CONFIG_FILE="$CONFIG_DIR/config.toml"
@@ -205,7 +249,15 @@ echo
 echo "Next steps:"
 echo "  1. Configure your host's WireGuard interface (wg0) using"
 echo "     $WG_KEY as PrivateKey. See docs/spec.md §2.1 for the wg-quick template."
-echo "  2. Forward UDP 51820 to this host."
-echo "  3. docker compose up -d  (if using the docker-compose path)"
-echo "  4. Once it's up, browse europa.westernbtc.com to confirm your"
-echo "     listing shows in the directory."
+echo "  2. Forward UDP 51820 from your router/firewall to this host."
+echo
+echo "  Then pick one of:"
+echo "    A. docker compose up -d  (the default — see README.md 'Quick start')"
+echo "    B. K8s — see README.md 'Kubernetes deploy'. The bootstrap"
+echo "       outputs that the K8s path consumes:"
+echo "         config/config.toml   →  Secret europa-node-config (key: config.toml)"
+echo "         secrets/nsec         →  Secret europa-node-nsec   (key: nsec)"
+echo "         secrets/wg-server.key →  /etc/wireguard/server.key on the pinned node"
+echo
+echo "  3. Once the daemon is up and your listing publishes, browse any"
+echo "     directory site (e.g. europa.westernbtc.com) to confirm it appears."

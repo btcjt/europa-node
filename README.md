@@ -26,8 +26,11 @@ and ~30 minutes:
 git clone https://github.com/btcjt/europa-node
 cd europa-node
 
-# 2. Install WireGuard + a tool to generate cryptographic keys.
-sudo apt install -y wireguard-tools openssl
+# 2. Install WireGuard + key-gen tools. `node` is optional but lets
+#    bootstrap.sh auto-derive the Cashu P2PK pubkey; without it
+#    you'll have to derive that one value manually.
+sudo apt install -y wireguard-tools openssl nodejs   # Debian/Ubuntu
+# brew install wireguard-tools openssl node          # macOS
 
 # 3. Bootstrap. Generates your Nostr nsec, WireGuard server keypair,
 #    Cashu P2PK keypair, and writes a starting ./config/config.toml
@@ -35,14 +38,19 @@ sudo apt install -y wireguard-tools openssl
 ./scripts/bootstrap.sh
 
 # 4. Bring up the host's WireGuard interface (one-time):
+#    Detect the egress interface from the default route — it's `eth0`
+#    on most cloud VMs but `enp0s31f6` / `wlp3s0` / etc. on bare metal
+#    and `ens5` on AWS Nitro. Hardcoding `eth0` breaks MASQUERADE on
+#    every other host.
+DEFIFACE=$(ip route show default | awk '{print $5; exit}')
 sudo install -m 600 ./secrets/wg-server.key /etc/wireguard/server.key
-sudo tee /etc/wireguard/wg0.conf <<'CONF'
+sudo tee /etc/wireguard/wg0.conf <<CONF
 [Interface]
-PrivateKey = $(cat /etc/wireguard/server.key)
+PrivateKey = $(sudo cat /etc/wireguard/server.key)
 Address    = 10.42.0.1/24
 ListenPort = 51820
-PostUp     = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-PostDown   = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+PostUp     = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o $DEFIFACE -j MASQUERADE
+PostDown   = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o $DEFIFACE -j MASQUERADE
 CONF
 echo 'net.ipv4.ip_forward = 1' | sudo tee /etc/sysctl.d/99-wg.conf
 sudo sysctl -p /etc/sysctl.d/99-wg.conf
@@ -182,7 +190,7 @@ The K8s path has real extra constraints vs Docker Compose. Read
 through [`k8/`](k8/) before applying — there are placeholders to
 replace.
 
-Concrete pre-reqs (NOT just `kubectl apply`):
+#### Pre-reqs (NOT just `kubectl apply`)
 
 1. **`wireguard-tools` installed on the pinned node** and
    `systemctl enable --now wg-quick@wg0` already done. The pod
@@ -200,33 +208,103 @@ Concrete pre-reqs (NOT just `kubectl apply`):
    Gateways enforce same-namespace allowedRoutes; the
    [`k8/referencegrant.yml`](k8/referencegrant.yml) lets it
    cross-namespace-reference the Service.
-5. **RBAC for your CI/build SA** in `europa-node` namespace —
-   [`k8/rbac.yml`](k8/rbac.yml) is the template (replace
-   `BUILDER_SA_NAMESPACE` / `BUILDER_SA_NAME`).
+5. **(Optional) RBAC for your CI/build ServiceAccount** in `europa-node`
+   namespace — [`k8/rbac.yml`](k8/rbac.yml) is the template. Only
+   needed if a CI Job applies these manifests on your behalf from a
+   *different* namespace. If you `kubectl apply` from your laptop
+   with cluster-admin, skip this file entirely.
 6. **Firewall forwards UDP 51820** to the pinned worker.
 
-Once those are in place:
+#### Placeholders to replace before applying
+
+| File | Placeholder | Replace with |
+| ---- | ----------- | ------------ |
+| [`k8/deployment-template.yml`](k8/deployment-template.yml) | `REPLACE_WITH_YOUR_WG_HOST` | Hostname of the worker running `wg-quick@wg0` (matches `kubernetes.io/hostname` label, often the node's hostname). |
+| [`k8/deployment-template.yml`](k8/deployment-template.yml) | `IMAGE_PLACEHOLDER` | Either `<your-registry>/europa-node:<tag>` (multi-node clusters) or `docker.io/library/europa-node:test` (single-node K3s with a local-built image — see below). |
+| [`k8/deployment-template.yml`](k8/deployment-template.yml) | `imagePullSecrets: - name: registry-credentials` | Delete the whole stanza if you're using a public image or a locally-imported one. |
+| [`k8/httproute.yml`](k8/httproute.yml) | `REPLACE_WITH_YOUR_GATEWAY_NAMESPACE` | Namespace your Gateway resource lives in (e.g. `default`, `envoy-gateway-system`). |
+| [`k8/httproute.yml`](k8/httproute.yml) | `REPLACE_WITH_YOUR_GATEWAY_NAME` | `.metadata.name` of your Gateway. |
+| [`k8/httproute.yml`](k8/httproute.yml) + [`k8/referencegrant.yml`](k8/referencegrant.yml) | `REPLACE_WITH_YOUR_PUBLIC_HOSTNAME` (httproute) / `REPLACE_WITH_YOUR_GATEWAY_NAMESPACE` (refgrant) | Your operator's public hostname (matches `config.server.public_host`) / your Gateway's namespace. |
+| [`k8/rbac.yml`](k8/rbac.yml) | `REPLACE_WITH_BUILDER_SA_NAME` / `..._NAMESPACE` | Only if you're using a CI builder; otherwise skip the whole file. |
+
+#### Image: where it comes from
+
+The Deployment's `image:` field has to resolve from inside the
+cluster. Two common paths:
+
+- **Multi-node cluster with a registry**: `docker build`, `docker push`
+  to a registry the cluster can pull from, then point `IMAGE_PLACEHOLDER`
+  at the resulting `<registry>/europa-node:<tag>`. Add a
+  `kubernetes.io/dockerconfigjson` Secret named `registry-credentials`
+  in `europa-node` namespace if the registry is private (otherwise
+  delete the `imagePullSecrets` stanza).
+- **Single-node K3s with no registry** (fastest local-test path):
+
+  ```bash
+  # On the K3s node itself (which is also where the daemon will run).
+  cd europa-node
+  sudo docker build -t europa-node:test .
+  sudo docker save europa-node:test -o /tmp/europa-node-test.tar
+  sudo k3s ctr images import /tmp/europa-node-test.tar
+  # Then in deployment-template.yml use:
+  #   image: docker.io/library/europa-node:test
+  # and DELETE the `imagePullSecrets` stanza.
+  ```
+
+  `k3s ctr` is the K3s-bundled containerd CLI. Importing here makes
+  the image visible to K3s' pull-by-name without an actual registry
+  round-trip.
+
+#### Concrete sequence
 
 ```bash
-# Replace placeholders in the manifests, then:
+# 1. Apply the namespace + the cross-namespace ReferenceGrant + Service.
 kubectl apply -f k8/namespace.yml
-kubectl apply -f k8/rbac.yml
 kubectl apply -f k8/referencegrant.yml
+kubectl apply -f k8/service.yml
+# (rbac.yml — only if you have an out-of-namespace CI builder)
 
-# Create secrets from your bootstrap output:
+# 2. Create secrets from your bootstrap output. Paths match what
+#    ./scripts/bootstrap.sh wrote.
 kubectl create secret generic europa-node-nsec \
   --from-file=nsec=./secrets/nsec --namespace europa-node
 kubectl create secret generic europa-node-config \
   --from-file=config.toml=./config/config.toml --namespace europa-node
 
-# Build + push your image, sed it into deployment-template.yml, then:
-sed "s|IMAGE_PLACEHOLDER|<your-registry>/europa-node:<tag>|g" \
-    k8/deployment-template.yml | kubectl apply -f -
-kubectl apply -f k8/service.yml
+# 3. Replace placeholders in deployment-template.yml + httproute.yml
+#    using the table above. Then:
+kubectl apply -f k8/deployment-template.yml
 kubectl apply -f k8/httproute.yml
 
+# 4. Watch the daemon come up.
 kubectl logs -f -n europa-node deployment/europa-node
 ```
+
+You'll see `event: 'listing-published'` within ~10 seconds of the
+pod becoming Ready. After that, your operator should appear in any
+directory site that subscribes to your published relays (e.g.
+[europa.westernbtc.com/operators](https://europa.westernbtc.com/operators)).
+
+#### Verifying the deploy
+
+```bash
+# /info reachable over HTTPS through the Gateway:
+curl -s https://your-hostname.example/info | jq .
+
+# CORS allows browser-based directories (a non-zero
+# Access-Control-Allow-Origin must echo your Origin):
+curl -sI -H "Origin: https://europa.westernbtc.com" \
+  https://your-hostname.example/info | grep -i access-control
+
+# Open the self-diagnose page on any directory site (replace npub +
+# d-tag with yours; npub comes from your nsec):
+#   https://europa.westernbtc.com/operators/diagnose?npub=npub1…&d=<your-d-tag>
+```
+
+The diagnose page runs 8 checks (listing-present, listing-shape,
+cashu-method, endpoint-url, p2pk-format, /info reachable, /info-vs-listing
+match, mint reachable) and tells the operator-side hint for any
+that fail.
 
 ---
 
@@ -265,6 +343,24 @@ not implemented here. Pull requests welcome.
   listing**. Mismatches give the buyer `wrong-mint` / `wrong-p2pk`
   errors and look like operator misconfiguration to anyone
   troubleshooting.
+- **CORS must be open** — the marketplace is intentionally cross-origin
+  and every browser-based directory will fetch your `/info` and
+  `/purchase` from a different origin. europa-node already sends
+  `Access-Control-Allow-Origin: *` via `@fastify/cors`; if you front
+  it with a reverse proxy that strips headers, re-add them. See
+  [`docs/spec.md` §3.1 CORS requirement](docs/spec.md#cors-requirement)
+  for nginx/Caddy snippets.
+- **`PostUp ... -o eth0 -j MASQUERADE` will silently no-op on most
+  hosts**. `eth0` is the right interface only on certain cloud VMs;
+  bare-metal and AWS Nitro use `enp0s31f6` / `wlp3s0` / `ens5` etc.
+  Detect with `ip route show default | awk '{print $5; exit}'` and
+  use that. The Quick start above does it dynamically.
+- **K8s `kubectl apply` Warning about PodSecurity** — you'll see
+  *"would violate PodSecurity 'baseline:latest'"* when applying the
+  Deployment. That's the namespace's *warn* setting talking; the
+  *enforce* setting is `privileged`, which the Deployment satisfies.
+  The pod runs fine. To silence: drop the `audit: baseline` /
+  `warn: baseline` labels in [`k8/namespace.yml`](k8/namespace.yml).
 
 ---
 
