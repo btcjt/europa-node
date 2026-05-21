@@ -38,9 +38,22 @@ async function main(): Promise<void> {
     lightning = new PhoenixdBackend(config.lightning.base_url, config.lightning.api_token);
   }
 
+  // Accepted-mint set = every mint in the listing's cashu payment
+  // methods, plus the legacy `[cashu].mint_url` if an older config
+  // still sets it. The listing is the source of truth — buyers pay
+  // the mints the listing advertises, so the daemon accepts exactly
+  // those. `[cashu].mint_url` is kept only so pre-multi-mint configs
+  // don't silently stop accepting payments after an upgrade.
   let cashu: CashuAdapter | null = null;
-  if (config.cashu.enabled && config.cashu.mint_url) {
-    cashu = new CashuAdapter(config.cashu.mint_url, config.cashu.p2pk_privkey_hex);
+  if (config.cashu.enabled) {
+    const mintSet = new Set<string>();
+    for (const pm of config.listing.payment_methods) {
+      if (pm.type === 'cashu') mintSet.add(pm.mint);
+    }
+    if (config.cashu.mint_url) mintSet.add(config.cashu.mint_url);
+    if (mintSet.size > 0) {
+      cashu = new CashuAdapter([...mintSet], config.cashu.p2pk_privkey_hex);
+    }
   }
 
   const publisher = new ListingPublisher(config, nsec);

@@ -65,15 +65,22 @@ backend = "stub"
 # Same model as Lightning: enabled = false means no Cashu purchases.
 [cashu]
 enabled = false
-# The mint URL clients lock tokens against. MUST be the same URL you
-# advertise in listing.payment_methods (mint field). Operators using
-# multiple mints publish multiple cashu payment_methods + run multiple
-# nodes — one mint per node keeps token routing simple.
-# mint_url = "https://mint.example.com"
 # Hex private key matching the P2PK pubkey advertised in your listing.
 # Keep this on the box, file mode 600. Lose it = lose access to every
-# token clients lock to your P2PK.
+# token clients lock to your P2PK. ONE key covers every mint you
+# accept — NUT-11 P2PK locks are mint-agnostic, so the same key
+# unlocks tokens from any mint a buyer pays.
 # p2pk_privkey_hex = ""
+#
+# Multi-mint: the daemon accepts tokens from EVERY mint listed in your
+# listing.payment_methods cashu entries below. Want to take two mints?
+# Add two `[[listing.payment_methods]]` cashu blocks (same p2pk +
+# endpoint, different `mint`). No separate mint list to maintain here.
+#
+# `mint_url` (legacy, single-mint) is still honored if set — it's
+# merged into the accepted set — but new configs should just rely on
+# the listing's cashu entries and leave this unset.
+# mint_url = "https://mint.example.com"
 
 # ── Nostr ───────────────────────────────────────────────────────────
 [nostr]
@@ -178,9 +185,20 @@ type = "lightning"
 endpoint = "https://vpn.example.com/lnurlp"
 mechanism = "lnurl-pay"
 
-# Cashu (uncomment to enable + also set [cashu] above):
+# Cashu (uncomment to enable + also set [cashu].p2pk_privkey_hex above):
 # [[listing.payment_methods]]
 # type = "cashu"
 # mint = "https://mint.example.com"
+# p2pk = "02abc...your-p2pk-pubkey..."
+# endpoint = "https://vpn.example.com/purchase"
+#
+# Multi-mint: add another cashu block to accept a second mint. Same
+# p2pk + endpoint, different mint URL. The daemon accepts tokens from
+# every mint listed here; buyers pick which one to pay with. Useful
+# when your customers hold ecash at different mints and you don't want
+# to force a Lightning round-trip on them.
+# [[listing.payment_methods]]
+# type = "cashu"
+# mint = "https://mint2.example.com"
 # p2pk = "02abc...your-p2pk-pubkey..."
 # endpoint = "https://vpn.example.com/purchase"

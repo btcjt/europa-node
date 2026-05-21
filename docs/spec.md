@@ -393,8 +393,18 @@ For OpenVPN purchases, `client_pubkey` is replaced with `client_id` (an arbitrar
    - `a` tag must reference one of the operator's active listings
    - `price` tag must match a price tier from that listing
 3. **Parse and validate the Cashu token from the X-Cashu header:**
-   - Mint URL must match a `mint` tag in the listing
-   - P2PK lock must match the operator's P2PK pubkey from that listing
+   - The token's mint must be one of the mints the listing advertises.
+     A listing may carry **multiple** `cashu` payment methods, each
+     with its own `mint` — the daemon accepts a token issued by *any*
+     of them. The buyer chooses which mint to pay with (typically a
+     mint they already hold ecash at); the daemon dispatches on the
+     token's own mint field. A token from a mint not in the listing
+     is rejected with `wrong-mint`.
+   - P2PK lock must match the operator's P2PK pubkey. The operator
+     uses **one** P2PK keypair regardless of how many mints it
+     accepts — NUT-11 locks are mint-agnostic, so the same key
+     unlocks tokens from every accepted mint. All `cashu` payment
+     methods in a listing therefore carry the same `p2pk` value.
    - Total amount must equal or exceed the price tier amount
 4. **Swap the token at the mint.** This validates the token isn't already spent and converts it to fresh tokens the operator owns. The mint will reject double-spends.
 5. **Generate the config** (WireGuard or OpenVPN).

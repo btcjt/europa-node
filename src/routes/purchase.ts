@@ -64,15 +64,19 @@ export function registerPurchaseRoute(app: FastifyInstance, deps: PurchaseRouteD
       return { status: 'error', reason: 'no-client-pubkey' };
     }
 
-    const cashuMint = deps.config.listing.payment_methods.find((p) => p.type === 'cashu');
-    if (!cashuMint) {
+    // The CashuAdapter knows the operator's full accepted-mint set
+    // (built at startup from every cashu entry in the listing). It
+    // dispatches on the token's own mint and rejects with `wrong-mint`
+    // if the buyer paid a mint this operator doesn't take — no need
+    // to pin a single expected mint here anymore.
+    if (deps.cashu.mints.length === 0) {
       reply.code(503);
       return { status: 'error', reason: 'no-cashu-in-listing' };
     }
 
     let swap;
     try {
-      swap = await deps.cashu.receive(cashuToken, cashuMint.mint);
+      swap = await deps.cashu.receive(cashuToken);
     } catch (err) {
       const reason = err instanceof Error ? err.message : 'invalid-token';
       reply.code(402);
