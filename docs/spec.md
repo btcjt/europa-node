@@ -215,8 +215,51 @@ All endpoints served over HTTPS on a domain the operator controls (e.g. `vpn.ope
 | `/lnurlp`          | GET    | LNURL-pay metadata (BOLT-LNURL standard)   |
 | `/lnurlp/callback` | GET    | LNURL-pay invoice generation               |
 | `/purchase`        | POST   | Cashu purchase endpoint (X-Cashu + BUD-11) |
-| `/info`            | GET    | Optional: human-readable info page         |
+| `/info`            | GET    | Daemon self-description as JSON (software, version, mints, listing snapshot) |
 | `/health`          | GET    | Health check for monitoring                |
+
+#### `/info` response shape <a id="info-endpoint"></a>
+
+`/info` is the daemon's introspection JSON. Buyers and directory sites hit it to (a) verify the operator pubkey matches the listing they're looking at, (b) discover the concrete mint + endpoint URLs without parsing NIP-99 `payment` tags, and (c) tell which operator-daemon implementation and spec revision they're talking to (relevant once there's more than one).
+
+Required fields:
+
+```json
+{
+  "software": "europa-node",
+  "version": "0.1.0",
+  "spec_version": "vpn-marketplace/1",
+
+  "pubkey": "<hex 32-byte operator pubkey>",
+  "endpoint": "vpn.operator.example",
+
+  "title": "...",
+  "summary": "...",
+  "protocols": ["wireguard"],
+  "region": { "country": "US", "sub": "US-FL", "geohash": "dhvr5" },
+  "prices": [ { "amount": 100, "currency": "sat", "unit": "hour" } ],
+  "policies": ["no-logs"],
+
+  "payment_methods": ["lightning", "cashu"],
+  "mints": ["https://mint.example.com"],
+  "cashu_purchase_endpoints": ["https://vpn.operator.example/purchase"],
+  "lightning_endpoints": ["https://vpn.operator.example/lnurlp"]
+}
+```
+
+Optional fields: `content` (the long-form Markdown body the listing also carries), `policy_url`.
+
+Notes:
+
+- `software` lets clients differentiate europa-node from alternative implementations as they appear. The string is a free-form identifier — no enum, no central registry.
+- `version` is the daemon's own version (`package.json` version for europa-node). Bump on every release tag; useful for bug reports.
+- `spec_version` is the VPN-marketplace protocol revision. Today there's exactly one: `vpn-marketplace/1`. Future protocol breaks bump this, and clients can branch on it.
+- `pubkey` is the operator's 32-byte hex Nostr pubkey (not bech32 npub). A directory site that's about to send a buyer to this daemon should match it against the listing event's `pubkey`. A mismatch usually means the operator's listing has been impersonated or the operator rotated keys without republishing.
+- `endpoint` is the public hostname the daemon thinks it lives at. A common misconfig is moving the daemon to a new host and forgetting to update the listing's `payment` tags — `endpoint` here vs the hostnames in the listing's `payment` tags reveals that drift.
+- `mints`, `cashu_purchase_endpoints`, `lightning_endpoints` are deduped projections of the configured `payment_methods`. Whenever a buyer-side flow needs "which mint do I top up at to buy from this operator", these arrays answer without re-parsing payment tags. Most operators have one entry per array.
+- `payment_methods` (the string array `["lightning", "cashu"]`) is kept for backwards-compat with tooling written against earlier `/info` versions. New consumers should prefer `mints` / `cashu_purchase_endpoints` / `lightning_endpoints`.
+
+Responses are always JSON — no content negotiation, no HTML view. The europa-website operator-detail page is the canonical human-friendly view; `/info` is the wire surface.
 
 #### CORS requirement <a id="cors-requirement"></a>
 
