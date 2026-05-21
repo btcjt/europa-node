@@ -216,6 +216,44 @@ All endpoints served over HTTPS on a domain the operator controls (e.g. `vpn.ope
 | `/info`            | GET    | Optional: human-readable info page         |
 | `/health`          | GET    | Health check for monitoring                |
 
+#### CORS requirement <a id="cors-requirement"></a>
+
+The marketplace is intentionally cross-origin. A buyer's browser fetches your `/info` and POSTs to your `/purchase` from whatever directory site or client they happen to be using — `europa.westernbtc.com`, a fork, a CLI in a web-served notebook, a third-party Nostr client. **Your daemon (or the reverse proxy in front of it) MUST send CORS headers** or browsers will refuse to read the response, even when the daemon answered correctly.
+
+Minimum:
+
+```
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Authorization, X-Cashu
+Access-Control-Max-Age: 86400
+```
+
+The endpoints are payment-and-signature gated (BUD-11 auth on `/purchase`, the LNURL preimage on `/lnurlp/callback`), so origin gating buys you nothing — drop it open.
+
+`europa-node` does this out of the box via `@fastify/cors`. If you front it with nginx, add:
+
+```
+add_header 'Access-Control-Allow-Origin' '*' always;
+add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Cashu' always;
+if ($request_method = OPTIONS) { return 204; }
+```
+
+With Caddy:
+
+```
+header {
+  Access-Control-Allow-Origin "*"
+  Access-Control-Allow-Methods "GET, POST, OPTIONS"
+  Access-Control-Allow-Headers "Content-Type, Authorization, X-Cashu"
+}
+@options method OPTIONS
+respond @options 204
+```
+
+A daemon without CORS appears to work fine for `curl` and the operator's own probing tooling, but every browser-based buy attempt fails with the cryptic `CORS header 'Access-Control-Allow-Origin' missing` error and zero indication that the daemon itself answered correctly. `/operators/diagnose` on europa-website flags this as the most likely cause when `/info` is unreachable from a browser.
+
 ### 3.2 LNURL-pay endpoint
 
 **Initial metadata request** (`GET /lnurlp?p=<price_tag_hash>`):

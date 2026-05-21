@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import fastifyCors from '@fastify/cors';
 import type { OperatorConfig } from './config';
 import type { OperatorDb } from './db';
 import type { IpPool } from './ipPool';
@@ -25,6 +26,17 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       // Don't log auth headers or request bodies — those carry payment data.
       redact: ['req.headers.authorization', 'req.headers["x-cashu"]'],
     },
+  });
+
+  // Permissive CORS — the marketplace is intentionally cross-origin.
+  // Any directory site, CLI tool, or third-party Nostr client may need
+  // to call /info and /purchase from a different origin. The endpoints
+  // are payment-and-signature gated, not origin-gated.
+  app.register(fastifyCors, {
+    origin: true,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Cashu'],
+    maxAge: 86400,
   });
 
   app.get('/health', async () => ({
