@@ -1,0 +1,177 @@
+# ─────────────────────────────────────────────────────────────────────
+# Europa Node — operator config (TOML)
+# ─────────────────────────────────────────────────────────────────────
+#
+# Everything an operator can tune lives in this file. Copy it to
+# /etc/europa-node/config.toml, edit, and start the daemon. The
+# spec lives at services/europa-node/docs/spec.md.
+#
+# Path the daemon reads is controlled by the EUROPA_NODE_CONFIG env
+# var; default is /etc/europa-node/config.toml.
+
+# ── HTTP server ──────────────────────────────────────────────────────
+[server]
+# Address the daemon binds to inside its host/container.
+host = "0.0.0.0"
+port = 8080
+# Public hostname clients sign into BUD-11 `server` tags. MUST match
+# whatever DNS / reverse proxy fronts this daemon. Pick something
+# you control.
+public_host = "vpn.example.com"
+
+# ── Session database ────────────────────────────────────────────────
+[db]
+# SQLite. Will be created on first run with WAL journalling.
+path = "/var/lib/europa-node/sessions.db"
+
+# ── WireGuard server (host-side) ─────────────────────────────────────
+[wireguard]
+# Network interface name as it appears in `wg show`.
+interface = "wg0"
+# Public host:port clients dial. The operator's domain or IP, plus
+# the UDP port forwarded to the WireGuard kernel interface.
+endpoint_host = "vpn.example.com"
+endpoint_port = 51820
+# Server public key. Generate with `wg genkey | tee server.key | wg pubkey > server.pub`.
+# Paste the contents of server.pub here.
+server_pubkey = "REPLACE_WITH_SERVER_PUBKEY"
+# Subnet the operator hands out to clients. /24 = 253 usable IPs.
+subnet_cidr = "10.42.0.0/24"
+dns = ["1.1.1.1", "9.9.9.9"]
+
+# ── Lightning backend ────────────────────────────────────────────────
+# enabled = false means the daemon won't advertise Lightning at all
+# even if listing.payment_methods has a lightning entry. Flip to true
+# when you've wired up a backend.
+[lightning]
+enabled = false
+# "phoenixd" or "stub". The stub is for dev / when you only want
+# Cashu purchases.
+backend = "stub"
+# phoenixd HTTP API base URL + bearer token. Ignored when backend = "stub".
+# base_url = "http://localhost:9740"
+# api_token = ""
+
+# ── Cashu backend ───────────────────────────────────────────────────
+# Same model as Lightning: enabled = false means no Cashu purchases.
+[cashu]
+enabled = false
+# The mint URL clients lock tokens against. MUST be the same URL you
+# advertise in listing.payment_methods (mint field). Operators using
+# multiple mints publish multiple cashu payment_methods + run multiple
+# nodes — one mint per node keeps token routing simple.
+# mint_url = "https://mint.example.com"
+# Hex private key matching the P2PK pubkey advertised in your listing.
+# Keep this on the box, file mode 600. Lose it = lose access to every
+# token clients lock to your P2PK.
+# p2pk_privkey_hex = ""
+
+# ── Nostr ───────────────────────────────────────────────────────────
+[nostr]
+# Relays the listing is published to. Pick 3-5 of: relay.damus.io,
+# nos.lol, relay.snort.social, your-own-relay.example. NIP-65 outbox
+# requires you to also publish a kind-10002 from this pubkey naming
+# these relays — out of scope for the daemon, do it once via nak.
+relays = [
+  "wss://relay.damus.io",
+  "wss://nos.lol",
+  "wss://relay.snort.social",
+]
+# EITHER `nsec` (inline) OR `nsec_file` (path). nsec_file is preferred
+# — keep the secret out of the config-management surface.
+nsec_file = "/etc/europa-node/secret/nsec"
+# nsec = "nsec1..."   # inline alternative
+
+# ── Listing (kind:30402 published to Nostr) ──────────────────────────
+[listing]
+# NIP-99 d-tag — unique per (your-pubkey, listing). Pick something
+# stable; clients addressable-fetch by this. Don't change after launch
+# unless you want to look like a fresh operator.
+d_tag = "vpn-east-1"
+title = "Fast East-Coast VPN"
+summary = "1Gbps shared, no logs, AS400 datacenter. Lightning + Cashu."
+
+# Which VPN protocols this node serves. At least one required.
+protocols = ["wireguard"]
+
+# Operator policy declarations. Free-form strings; convention:
+# no-logs, no-torrents, no-egress-spam, dmca-respond, ...
+policies = ["no-logs", "no-torrents"]
+# Optional pointer to a longer prose policy.
+# policy_url = "https://vpn.example.com/policy"
+
+# Optional capacity advertisement (operator's claim, unverified).
+# capacity = { amount = 1000, unit = "Mbps" }
+
+# Free-form markdown that becomes the NIP-99 event content. Use it
+# for whatever doesn't fit the tags — operating history, terms,
+# contact email.
+content = """
+East-Coast US VPN. WireGuard only. No logs, no torrents.
+Operated since 2026.
+"""
+
+# ── Location ────────────────────────────────────────────────────────
+[listing.region]
+# ISO 3166-1 alpha-2 country code (US, DE, JP, ...).
+country = "US"
+# Optional human-readable sub-region.
+sub = "US-East"
+# Geohash for map plotting. Precision is your choice — typical 4-6 chars.
+# 4 chars ≈ 20km cell (region honesty); 6 chars ≈ 600m cell (datacenter honesty).
+# Generate at geohash.org or with a CLI tool.
+geohash = "dr5regw"
+
+# ── Pricing ─────────────────────────────────────────────────────────
+# At least one [[listing.prices]] block required. Time units:
+# hour / day / week / month. Data units: GiB / TiB. Currency: usually
+# sat; btc and ISO 4217 codes also accepted.
+[[listing.prices]]
+amount = 100
+currency = "sat"
+unit = "hour"
+
+[[listing.prices]]
+amount = 1000
+currency = "sat"
+unit = "day"
+
+[[listing.prices]]
+amount = 5000
+currency = "sat"
+unit = "week"
+
+# Data-bundled tier (uncomment to enable):
+# [[listing.prices]]
+# amount = 500
+# currency = "sat"
+# unit = "GiB"
+
+# ── Purchase bounds ─────────────────────────────────────────────────
+# Optional. min_purchase prevents tiny denial-of-spam buys;
+# max_purchase prevents one client from monopolising bandwidth.
+[listing.min_purchase]
+amount = 1
+unit = "hour"
+
+[listing.max_purchase]
+amount = 30
+unit = "day"
+
+# ── Payment methods ─────────────────────────────────────────────────
+# At least one [[listing.payment_methods]] required. The daemon
+# refuses to start if it advertises lightning but the [lightning]
+# table has enabled = false, etc.
+
+# Lightning via LNURL-pay (recommended):
+[[listing.payment_methods]]
+type = "lightning"
+endpoint = "https://vpn.example.com/lnurlp"
+mechanism = "lnurl-pay"
+
+# Cashu (uncomment to enable + also set [cashu] above):
+# [[listing.payment_methods]]
+# type = "cashu"
+# mint = "https://mint.example.com"
+# p2pk = "02abc...your-p2pk-pubkey..."
+# endpoint = "https://vpn.example.com/purchase"

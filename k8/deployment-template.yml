@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: europa-node
+  namespace: europa-node
+  labels:
+    app: europa-node
+spec:
+  # Single replica: the daemon owns peer state that the kernel WireGuard
+  # interface holds. Two daemons would race on `wg set` calls.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: europa-node
+  template:
+    metadata:
+      labels:
+        app: europa-node
+    spec:
+      # Pin the daemon to the node that has wg-quick@wg0 enabled and
+      # that your firewall forwards UDP 51820 to. Replace this with
+      # your own node's hostname.
+      nodeSelector:
+        kubernetes.io/hostname: REPLACE_WITH_YOUR_WG_HOST
+      # hostNetwork so the daemon and `wg` shell calls operate against
+      # the host's wg0 interface directly. The /health probe + your
+      # HTTPRoute both target containerPort 8080 on the host.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      imagePullSecrets:
+        # If you pull from a private registry, point this at the
+        # docker-registry Secret in this namespace. For public
+        # registries (ghcr.io with public images, Docker Hub) you can
+        # remove this whole stanza.
+        - name: registry-credentials
+      containers:
+        - name: europa-node
+          image: IMAGE_PLACEHOLDER
+          securityContext:
+            # NET_ADMIN is required for `wg set`. Everything else
+            # stays dropped — no privileged: true.
+            capabilities:
+              add:
+                - NET_ADMIN
+          ports:
+            - name: http
+              containerPort: 8080
+              hostPort: 8080
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: LOG_LEVEL
+              value: info
+            - name: EUROPA_NODE_CONFIG
+              value: /etc/europa-node/config.toml
+          volumeMounts:
+            - { name: config, mountPath: /etc/europa-node, readOnly: true }
+            - { name: nsec, mountPath: /etc/europa-node/secret, readOnly: true }
+            - { name: wireguard, mountPath: /etc/wireguard }
+            - { name: data, mountPath: /var/lib/europa-node }
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: '100m'
+              memory: '128Mi'
+            limits:
+              cpu: '500m'
+              memory: '512Mi'
+      volumes:
+        - name: config
+          # Secret (not ConfigMap) because config.toml contains the Cashu
+          # P2PK private key under [cashu].p2pk_privkey_hex. Mounted file
+          # mode 0o400 so the daemon (running as root) can read but
+          # nothing else can.
+          secret:
+            secretName: europa-node-config
+            defaultMode: 0o400
+        - name: nsec
+          secret:
+            secretName: europa-node-nsec
+            defaultMode: 0o400
+        - name: wireguard
+          hostPath:
+            path: /etc/wireguard
+            type: Directory
+        - name: data
+          hostPath:
+            path: /var/lib/europa-node
+            type: DirectoryOrCreate

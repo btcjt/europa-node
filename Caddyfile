@@ -1,0 +1,17 @@
+# services/europa-node/Caddyfile
+#
+# Caddy reverse-proxy in front of the daemon. Replace `vpn.example.com`
+# with the same hostname you wrote into config.toml's
+# server.public_host. Caddy will auto-obtain + renew Let's Encrypt
+# certificates as long as DNS points here and ports 80 + 443 are open.
+
+vpn.example.com {
+	reverse_proxy europa-node:8080
+
+	# Daemon already redacts sensitive headers in its logs (auth +
+	# X-Cashu). Caddy logs the request line + status; that's fine.
+	log {
+		output stdout
+		format console
+	}
+}

@@ -1,0 +1,48 @@
+# If your CI/build pipeline runs Jobs whose ServiceAccount lives in
+# a *different* namespace than `europa-node` (typical when builds are
+# centralized in a `cicd` / `flux-system` / `argocd` namespace), it
+# needs a Role + RoleBinding in this namespace to apply the
+# Deployment, Service, and ReferenceGrant.
+#
+# Replace BUILDER_SA_NAMESPACE + BUILDER_SA_NAME with the namespace
+# and name of your CI ServiceAccount. If you apply manifests with
+# cluster-admin (e.g. from your laptop), you can skip this file.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: europa-node-deployer
+  namespace: europa-node
+rules:
+  - apiGroups: ['']
+    resources:
+      - pods
+      - services
+      - configmaps
+      - secrets
+      - serviceaccounts
+      - persistentvolumeclaims
+      - events
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ['apps']
+    resources: [deployments, replicasets, daemonsets, statefulsets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ['batch']
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ['gateway.networking.k8s.io']
+    resources: [httproutes, gateways, referencegrants]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: europa-node-deployer-bind
+  namespace: europa-node
+subjects:
+  - kind: ServiceAccount
+    name: REPLACE_WITH_BUILDER_SA_NAME
+    namespace: REPLACE_WITH_BUILDER_SA_NAMESPACE
+roleRef:
+  kind: Role
+  name: europa-node-deployer
+  apiGroup: rbac.authorization.k8s.io

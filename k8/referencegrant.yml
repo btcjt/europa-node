@@ -1,0 +1,21 @@
+# Allows your HTTPRoute (in your Gateway's namespace) to reference the
+# europa-node-service in this namespace. Required because most
+# Gateways accept routes only from their own namespace, and our
+# Service has to live here (where the privileged-PSA workload sits).
+#
+# Replace GATEWAY_NAMESPACE with the namespace your HTTPRoute lives
+# in. Same value as `metadata.namespace` in k8/httproute.yml.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: httproute-to-europa-node-service
+  namespace: europa-node
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: REPLACE_WITH_YOUR_GATEWAY_NAMESPACE
+  to:
+    - group: ''
+      kind: Service
+      name: europa-node-service

@@ -1,0 +1,26 @@
+# Lives in your Gateway's namespace (NOT in `europa-node`), because
+# most Gateways enforce `allowedRoutes.namespaces.from: Same`. The
+# cross-namespace backend reference is permitted by the
+# ReferenceGrant in k8/referencegrant.yml.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: europa-node-route
+  namespace: REPLACE_WITH_YOUR_GATEWAY_NAMESPACE
+spec:
+  parentRefs:
+    - name: REPLACE_WITH_YOUR_GATEWAY_NAME
+  hostnames:
+    # The hostname clients sign into BUD-11 `server` tags. Must match
+    # config.server.public_host in the Secret.
+    - REPLACE_WITH_YOUR_PUBLIC_HOSTNAME
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /lnurlp }
+        - path: { type: PathPrefix, value: /purchase }
+        - path: { type: Exact, value: /info }
+        - path: { type: Exact, value: /health }
+      backendRefs:
+        - name: europa-node-service
+          namespace: europa-node
+          port: 80

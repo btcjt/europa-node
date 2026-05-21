@@ -1,0 +1,19 @@
+# Dedicated namespace for europa-node because the workload requires
+# host-network + NET_ADMIN + hostPath + hostPort, all of which the
+# `baseline` PodSecurity policy enforced on the `cicd` namespace
+# forbids. `privileged` is the right level here — the daemon owns
+# kernel WireGuard state on k8worker3. Audit + warn stay at
+# `baseline` so we still get told if some future workload in this
+# namespace drifts past what europa-node actually needs.
+#
+# Other privileged WesternBTC workloads (e.g. a future FIPS daemon)
+# can either land here or get their own namespace; this is the
+# template.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: europa-node
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline

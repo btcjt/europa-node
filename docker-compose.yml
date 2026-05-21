@@ -1,0 +1,64 @@
+# docker-compose.yml — self-host europa-node on any Linux box.
+#
+# Three pieces:
+#
+#   1. WireGuard runs on the *host* (not in a container) for the
+#      lowest packet-handling overhead. The daemon talks to it via
+#      `wg` shell commands.
+#   2. The daemon container does the listing + payment + bookkeeping.
+#   3. Caddy fronts the daemon with auto-renewing Let's Encrypt
+#      certificates.
+#
+# See README.md "Quick start" for the end-to-end bringup.
+
+version: "3.8"
+
+services:
+  europa-node:
+    # Build locally from this repo (recommended for v1 — no public
+    # image is published yet).
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # If you publish your own image, point here:
+    # image: ghcr.io/<your-org>/europa-node:latest
+    restart: unless-stopped
+    # Host networking so the daemon's `wg set wg0 …` reaches the host
+    # WireGuard interface directly. Drop down to bridge mode + a
+    # control socket if your security model requires container isolation
+    # — that's its own setup (out of scope here).
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      # The TOML config the daemon reads. Edit ./config/config.toml.
+      - ./config:/etc/europa-node:ro
+      # Operator's nsec, file-mode 600 on the host. Lives in ./secrets/nsec.
+      - ./secrets:/etc/europa-node/secret:ro
+      # Host WireGuard config. Server keys + wg0.conf live here.
+      - /etc/wireguard:/etc/wireguard
+      # SQLite session DB + any persistent operator state.
+      - ./data:/var/lib/europa-node
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: info
+      EUROPA_NODE_CONFIG: /etc/europa-node/config.toml
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    # Caddy listens on 80/443 and reverse-proxies the daemon. Auto-renews
+    # certs against Let's Encrypt — needs both ports exposed to the
+    # public internet AND a DNS A/AAAA record for `public_host` from
+    # config.toml pointing at this host.
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
