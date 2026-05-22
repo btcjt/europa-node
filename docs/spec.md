@@ -433,7 +433,7 @@ For OpenVPN purchases, `client_pubkey` is replaced with `client_id` (an arbitrar
 
 HTTP status codes: 200 for success, 402 for payment failure, 400 for malformed request, 401 for auth failure.
 
-#### Where the received ecash goes <a id="operator-wallet"></a>
+#### Operator wallet
 
 A Cashu token arrives P2PK-locked to the operator. After step 4
 swaps it, the operator holds fresh, plain (unlocked) proofs — but

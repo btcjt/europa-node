@@ -144,12 +144,24 @@ Key fields:
 | `wireguard.endpoint_host` / `endpoint_port` | What clients dial |
 | `wireguard.subnet_cidr` | Tunnel subnet (default `10.66.42.0/24`, /24 = 253 peers). Must not collide with `cni0` (K3s' Flannel defaults to `10.42.0.0/24` — silently breaks return routing if you reuse it), `docker0` (`172.17.0.0/16`), Tailscale (`100.64.0.0/10`), or your home LAN. |
 | `lightning.backend` + `base_url` + `api_token` | phoenixd / LND / stub |
-| `cashu.mint_url` + `p2pk_privkey_hex` | Your accepted Cashu mint + lock key |
-| `nostr.relays` | Where you publish the listing |
-| `nostr.nsec_file` | Path to your operator nsec |
-| `listing.title` + `summary` + `prices` + `payment_methods` | What appears in directories |
+| `cashu.enabled` + `p2pk_privkey_hex` | Turn Cashu on + the one lock key (covers every mint you accept) |
+| `nostr.relays` | Where the listing **and the operator wallet's token events** publish |
+| `nostr.nsec_file` | Path to your operator nsec (also the key for the operator wallet) |
+| `listing.title` + `summary` + `prices` + `payment_methods` | What appears in directories. Multiple `cashu` payment-method blocks = multiple accepted mints; buyers pick one. |
 | `listing.region.country/sub/geohash` | For map-style directories |
 | `listing.policies` + `policy_url` | Operator-declared policy |
+
+### Where your Cashu earnings go
+
+When Cashu is enabled the daemon keeps received ecash in a **NIP-60
+wallet** under the same nsec that signs your listing — auto-created
+on first start. The earnings are encrypted token events on your
+relays (off-box backup). To withdraw, open the wallet in any NIP-60
+client (e.g. a directory site's wallet page) by signing in with this
+node's nsec. The daemon has no payout endpoint; it only receives.
+The daemon refuses to start if Cashu is enabled but the wallet can't
+be established. Lightning purchases settle straight to your Lightning
+backend and don't touch the NIP-60 wallet.
 
 ---
 
@@ -312,8 +324,11 @@ that fail.
 
 - ✅ NIP-99 listing publish (kind 30402)
 - ✅ BUD-11 authorization (kind 24242)
-- ✅ Cashu purchase + P2PK token swap
+- ✅ Cashu purchase + P2PK token swap, **multiple mints per operator**
+- ✅ Received ecash kept in a **NIP-60 wallet** under the operator nsec
 - ✅ LNURL-pay endpoint (phoenixd or LND-as-stub)
+- ✅ `/info` self-description (software, version, mints, listing snapshot)
+- ✅ Permissive CORS (cross-origin buyers / directories / clients)
 - ✅ WireGuard peer lifecycle (`wg set peer`)
 - ✅ Session expiry + automatic peer removal
 - ✅ Bandwidth accounting (per-peer wg counters)
@@ -343,6 +358,13 @@ not implemented here. Pull requests welcome.
   listing**. Mismatches give the buyer `wrong-mint` / `wrong-p2pk`
   errors and look like operator misconfiguration to anyone
   troubleshooting.
+- **Cashu enabled ⇒ the daemon needs a reachable relay at startup.**
+  The operator's NIP-60 wallet (where received ecash is stored) is
+  loaded-or-created from your `nostr.relays` when the process boots;
+  if Cashu is on and no relay answers, the daemon **fails closed and
+  exits** rather than take payments it can't keep. If startup logs
+  show the wallet couldn't be established, fix relay reachability
+  before retrying — don't disable the check.
 - **CORS must be open** — the marketplace is intentionally cross-origin
   and every browser-based directory will fetch your `/info` and
   `/purchase` from a different origin. europa-node already sends
