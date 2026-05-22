@@ -96,13 +96,13 @@ enabled = false
 # ── Nostr ───────────────────────────────────────────────────────────
 [nostr]
 # Relays the listing is published to. Pick 3-5 of: relay.damus.io,
-# nos.lol, relay.snort.social, your-own-relay.example. NIP-65 outbox
+# nos.lol, relay.primal.net, your-own-relay.example. NIP-65 outbox
 # requires you to also publish a kind-10002 from this pubkey naming
 # these relays — out of scope for the daemon, do it once via nak.
 relays = [
   "wss://relay.damus.io",
   "wss://nos.lol",
-  "wss://relay.snort.social",
+  "wss://relay.primal.net",
 ]
 # EITHER `nsec` (inline) OR `nsec_file` (path). nsec_file is preferred
 # — keep the secret out of the config-management surface.

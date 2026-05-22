@@ -634,7 +634,7 @@ The daemon publishes and refreshes the operator's `kind: 30402` listing on confi
 relays = [
   "wss://relay.damus.io",
   "wss://nos.lol",
-  "wss://relay.snort.social",
+  "wss://relay.primal.net",
 ]
 nsec_file = "/etc/europa-node/secret/nsec"
 
