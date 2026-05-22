@@ -227,7 +227,7 @@ Required fields:
 ```json
 {
   "software": "europa-node",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "spec_version": "vpn-marketplace/1",
 
   "pubkey": "<hex 32-byte operator pubkey>",
