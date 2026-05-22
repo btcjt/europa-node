@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyCors from '@fastify/cors';
+import type { NDKCashuWallet } from '@nostr-dev-kit/wallet';
 import pkg from '../package.json';
 import type { OperatorConfig } from './config';
 import type { OperatorDb } from './db';
@@ -20,6 +21,8 @@ export interface ServerDeps {
   wg: WireGuardController;
   lightning: LightningBackend;
   cashu: CashuAdapter | null;
+  /** Operator's NIP-60 wallet — non-null whenever `cashu` is. */
+  operatorWallet: NDKCashuWallet | null;
   operatorPubkey: string;
 }
 
@@ -118,6 +121,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     config: deps.config,
     db: deps.db,
     cashu: deps.cashu,
+    operatorWallet: deps.operatorWallet,
     ipPool: deps.ipPool,
     wg: deps.wg,
     operatorPubkey: deps.operatorPubkey,

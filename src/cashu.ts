@@ -1,10 +1,17 @@
-import { CashuMint, CashuWallet, getDecodedToken } from '@cashu/cashu-ts';
+import { CashuMint, CashuWallet, getDecodedToken, type Proof } from '@cashu/cashu-ts';
 
 export interface CashuSwapResult {
   amountReceived: number;
   proofIds: string[];
   /** Which of the operator's configured mints the token came from. */
   mint: string;
+  /**
+   * The fresh proofs the operator now owns after the swap. Plain
+   * (no P2PK lock — the swap unlocked them). The caller persists
+   * these into the operator's NIP-60 wallet; if they're dropped the
+   * operator's revenue for this sale is gone.
+   */
+  proofs: Proof[];
 }
 
 /**
@@ -77,6 +84,6 @@ export class CashuAdapter {
       0,
     );
     const ids = proofs.map((p) => (typeof p.id === 'string' ? p.id : '')).filter(Boolean);
-    return { amountReceived, proofIds: ids, mint: decoded.mint };
+    return { amountReceived, proofIds: ids, mint: decoded.mint, proofs };
   }
 }

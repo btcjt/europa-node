@@ -433,6 +433,43 @@ For OpenVPN purchases, `client_pubkey` is replaced with `client_id` (an arbitrar
 
 HTTP status codes: 200 for success, 402 for payment failure, 400 for malformed request, 401 for auth failure.
 
+#### Where the received ecash goes <a id="operator-wallet"></a>
+
+A Cashu token arrives P2PK-locked to the operator. After step 4
+swaps it, the operator holds fresh, plain (unlocked) proofs — but
+proofs are just strings. If the daemon doesn't persist them the
+moment the request handler returns, that sale's revenue is gone:
+the mint considers the proofs valid and unspent, but nobody has
+recorded the secrets.
+
+The reference daemon keeps received ecash in a **NIP-60 wallet**
+under the operator's own Nostr identity — the same nsec that signs
+the kind-30402 listing:
+
+- **Storage.** The proofs become encrypted `kind:7375` token events
+  (plus a `kind:17375` wallet event and `kind:10019` nutzap-info),
+  published to the operator's relays. This is an off-box backup —
+  losing the daemon's disk doesn't lose the money.
+- **Auto-provisioning.** On first start, if the nsec has no
+  `kind:17375` wallet event, the daemon creates one seeded with the
+  mints from the listing's `cashu` payment methods. If a wallet
+  already exists it's loaded as-is.
+- **Fail-closed.** If Cashu is enabled but the wallet cannot be
+  loaded or created (relays unreachable, malformed wallet event),
+  the daemon **refuses to start**. A daemon that accepts Cashu with
+  nowhere to keep the proceeds is worse than one that's down.
+- **Withdrawal.** Because the wallet is a standard NIP-60 wallet,
+  the operator spends or withdraws by opening it in *any* NIP-60
+  client — including the directory site's own wallet page — and
+  signing in with the node's nsec. The daemon itself has no payout
+  endpoint; it only ever receives.
+
+A non-europa-node implementation is free to persist proofs however
+it likes (a local database, a different wallet). The constraint the
+spec sets is only that received proofs **must be durably stored
+before the success response is returned** — anything less loses
+operator funds.
+
 ### 3.4 Config generation
 
 **WireGuard config template:**

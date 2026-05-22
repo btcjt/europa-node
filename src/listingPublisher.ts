@@ -93,6 +93,15 @@ export class ListingPublisher {
   }
 
   /**
+   * The NDK instance — already connected (after start()) and bound to
+   * the operator's signer. Shared with the operator's NIP-60 wallet so
+   * both run off one relay-connection pool.
+   */
+  getNdk(): NDK {
+    return this.ndk;
+  }
+
+  /**
    * Count connected relays — pattern lifted from services/nsit-indexer,
    * which is proven inside this cluster. ndk.pool.connectedRelays()
    * is unreliable across NDK 3.x; iterating the pools' relay maps

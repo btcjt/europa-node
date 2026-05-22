@@ -63,6 +63,17 @@ backend = "stub"
 
 # ── Cashu backend ───────────────────────────────────────────────────
 # Same model as Lightning: enabled = false means no Cashu purchases.
+#
+# Where the money goes: when Cashu is enabled the daemon keeps a
+# NIP-60 wallet under the SAME nsec it uses for [nostr] — the one that
+# signs your listing. Received ecash is swapped, P2PK-unlocked, and
+# stored as encrypted token events on your [nostr].relays. On first
+# start the daemon auto-creates that wallet if the nsec has none yet.
+# To spend/withdraw your earnings, open the wallet in any NIP-60
+# client (e.g. europa.westernbtc.com/account/wallet) by signing in
+# with this nsec. The daemon refuses to start if Cashu is enabled but
+# the wallet can't be established — it won't take payments it can't
+# keep.
 [cashu]
 enabled = false
 # Hex private key matching the P2PK pubkey advertised in your listing.

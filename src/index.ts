@@ -12,6 +12,8 @@ import { WgController, InMemoryWireGuardController } from './wireguard';
 import { ListingPublisher } from './listingPublisher';
 import { PhoenixdBackend, StubLightningBackend, type LightningBackend } from './lightning';
 import { CashuAdapter } from './cashu';
+import { loadOrCreateOperatorWallet } from './operatorWallet';
+import type { NDKCashuWallet } from '@nostr-dev-kit/wallet';
 import { ExpiryWatcher } from './expiry';
 import { BandwidthAccountant } from './accounting';
 import { LightningSettlementWatcher } from './lightningWatcher';
@@ -60,6 +62,29 @@ async function main(): Promise<void> {
   await publisher.start();
   const operatorPubkey = publisher.pubkey();
 
+  // Operator's NIP-60 wallet — where received Cashu ecash is kept.
+  // If Cashu is enabled the wallet is mandatory: a daemon that takes
+  // Cashu payments with nowhere to store the proceeds silently burns
+  // money. Fail startup loudly rather than run in that state. The
+  // wallet shares the publisher's NDK (same signer, same relay pool).
+  let operatorWallet: NDKCashuWallet | null = null;
+  if (cashu) {
+    try {
+      operatorWallet = await loadOrCreateOperatorWallet(
+        publisher.getNdk(),
+        operatorPubkey,
+        cashu.mints,
+        config.nostr.relays,
+      );
+    } catch (err) {
+      throw new Error(
+        `Cashu is enabled but the operator NIP-60 wallet could not be ` +
+          `established — refusing to start (received ecash would be lost). ` +
+          `Cause: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   const expiry = new ExpiryWatcher(db, wg);
   expiry.start();
 
@@ -76,6 +101,7 @@ async function main(): Promise<void> {
     wg,
     lightning,
     cashu,
+    operatorWallet,
     operatorPubkey,
   });
 

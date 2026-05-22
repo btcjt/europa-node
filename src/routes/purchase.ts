@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { getEncodedToken } from '@cashu/cashu-ts';
+import type { NDKCashuWallet } from '@nostr-dev-kit/wallet';
 import type { OperatorConfig } from '../config';
 import type { OperatorDb } from '../db';
 import type { IpPool } from '../ipPool';
@@ -16,6 +18,12 @@ export interface PurchaseRouteDeps {
   config: OperatorConfig;
   db: OperatorDb;
   cashu: CashuAdapter | null;
+  /**
+   * The operator's NIP-60 wallet. Non-null whenever `cashu` is —
+   * index.ts refuses to start a Cashu-enabled daemon without it, so
+   * received ecash always has somewhere to land.
+   */
+  operatorWallet: NDKCashuWallet | null;
   ipPool: IpPool;
   wg: WireGuardController;
   operatorPubkey: string;
@@ -86,6 +94,34 @@ export function registerPurchaseRoute(app: FastifyInstance, deps: PurchaseRouteD
     if (swap.amountReceived < auth.check.matchedPrice.amount) {
       reply.code(402);
       return { status: 'error', reason: 'amount-mismatch' };
+    }
+
+    // Persist the just-received ecash into the operator's NIP-60
+    // wallet. CashuAdapter.receive() already swapped + P2PK-unlocked
+    // the buyer's token, so `swap.proofs` are plain, operator-owned
+    // proofs. receiveToken() re-receives them into the wallet — one
+    // extra mint swap, then a kind-7375 token event + kind-7376
+    // history event on the operator's relays. Without this the proofs
+    // exist only in this request's memory and the sale's revenue is
+    // lost when the handler returns.
+    //
+    // This runs AFTER the amount check but BEFORE peer setup: if the
+    // store fails we still want to know (loud log) but we don't fail
+    // the buyer's purchase — they paid, they get their tunnel; the
+    // money isn't lost, just not yet backed up to relays.
+    if (deps.operatorWallet) {
+      try {
+        const token = getEncodedToken({ mint: swap.mint, proofs: swap.proofs });
+        await deps.operatorWallet.receiveToken(
+          token,
+          `VPN sale · ${deps.config.listing.d_tag}`,
+        );
+      } catch (err) {
+        app.log.error(
+          { event: 'operator-wallet-store-failed', amount: swap.amountReceived, mint: swap.mint, err: String(err) },
+          'received ecash but failed to persist it to the NIP-60 wallet',
+        );
+      }
     }
 
     const ip = deps.ipPool.next(deps.db);
