@@ -1,6 +1,7 @@
 import type { OperatorDb, SessionRow } from './db';
 import type { LightningBackend } from './lightning';
 import type { WireGuardController } from './wireguard';
+import type { Notifier } from './notifier';
 
 /**
  * Poll the Lightning backend for pending sessions, flipping each to
@@ -19,6 +20,8 @@ export class LightningSettlementWatcher {
     private readonly db: OperatorDb,
     private readonly ln: LightningBackend,
     private readonly wg: WireGuardController,
+    /** Optional NIP-17 sale notifier; null when notifications are off. */
+    private readonly notifier: Notifier | null = null,
     private readonly intervalMs = 3_000,
   ) {}
 
@@ -65,6 +68,17 @@ export class LightningSettlementWatcher {
       session: row.session_id,
       method: 'lightning',
       ip: row.assigned_ip,
+    });
+
+    // Best-effort sale notification — settlement is the "purchase
+    // made" moment for the Lightning path. notifyPurchase swallows
+    // its own errors; fire-and-forget.
+    void this.notifier?.notifyPurchase({
+      amountSat: row.price_amount,
+      priceLabel: `${row.price_amount} ${row.price_currency}/${row.price_unit}`,
+      paymentMethod: 'lightning',
+      listingDTag: row.listing_d_tag,
+      expiresAt: row.expires_at,
     });
   }
 }

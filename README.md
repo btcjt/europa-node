@@ -147,6 +147,7 @@ Key fields:
 | `cashu.enabled` + `p2pk_privkey_hex` | Turn Cashu on + the one lock key (covers every mint you accept) |
 | `nostr.relays` | Where the listing **and the operator wallet's token events** publish |
 | `nostr.nsec_file` | Path to your operator nsec (also the key for the operator wallet) |
+| `notifications.enabled` + `pubkey` + `heartbeat_hours` | Optional NIP-17 DMs to you on every sale + a balance heartbeat. `pubkey` is the recipient — your personal npub/hex, not the node's. Off by default. |
 | `listing.title` + `summary` + `prices` + `payment_methods` | What appears in directories. Multiple `cashu` payment-method blocks = multiple accepted mints; buyers pick one. |
 | `listing.region.country/sub/geohash` | For map-style directories |
 | `listing.policies` + `policy_url` | Operator-declared policy |

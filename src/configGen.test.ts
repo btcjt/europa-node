@@ -16,6 +16,7 @@ const config = {
   lightning: { enabled: false, backend: 'stub' as const },
   cashu: { enabled: false },
   nostr: { relays: ['wss://x'], nsec: 'nsec' },
+  notifications: { enabled: false, heartbeat_hours: 24 },
   listing: {
     d_tag: 'd',
     title: 't',

@@ -7,6 +7,7 @@ import type { OperatorDb } from '../db';
 import type { IpPool } from '../ipPool';
 import type { WireGuardController } from '../wireguard';
 import type { CashuAdapter } from '../cashu';
+import type { Notifier } from '../notifier';
 import { checkBudAuthHeader } from '../auth';
 import {
   computeDataQuota,
@@ -27,6 +28,8 @@ export interface PurchaseRouteDeps {
   ipPool: IpPool;
   wg: WireGuardController;
   operatorPubkey: string;
+  /** Optional NIP-17 sale notifier; null when notifications are off. */
+  notifier: Notifier | null;
 }
 
 const purchaseBodySchema = z.object({
@@ -164,6 +167,17 @@ export function registerPurchaseRoute(app: FastifyInstance, deps: PurchaseRouteD
       last_tx_counter: 0,
       payment_hash: null,
       listing_d_tag: deps.config.listing.d_tag,
+    });
+
+    // Best-effort sale notification. Fire-and-forget: the buyer's
+    // response must not wait on a DM publish, and notifyPurchase
+    // swallows its own errors.
+    void deps.notifier?.notifyPurchase({
+      amountSat: swap.amountReceived,
+      priceLabel: `${auth.check.matchedPrice.amount} ${auth.check.matchedPrice.currency}/${auth.check.matchedPrice.unit}`,
+      paymentMethod: 'cashu',
+      listingDTag: deps.config.listing.d_tag,
+      expiresAt,
     });
 
     return {

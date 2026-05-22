@@ -8,6 +8,7 @@ import type { IpPool } from './ipPool';
 import type { LightningBackend } from './lightning';
 import type { CashuAdapter } from './cashu';
 import type { WireGuardController } from './wireguard';
+import type { Notifier } from './notifier';
 import { registerLnurlRoutes } from './routes/lnurl';
 import { registerPurchaseRoute } from './routes/purchase';
 
@@ -24,6 +25,8 @@ export interface ServerDeps {
   /** Operator's NIP-60 wallet — non-null whenever `cashu` is. */
   operatorWallet: NDKCashuWallet | null;
   operatorPubkey: string;
+  /** NIP-17 sale notifier — non-null only when `[notifications]` is on. */
+  notifier: Notifier | null;
 }
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
@@ -125,6 +128,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     ipPool: deps.ipPool,
     wg: deps.wg,
     operatorPubkey: deps.operatorPubkey,
+    notifier: deps.notifier,
   });
 
   return app;

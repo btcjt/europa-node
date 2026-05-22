@@ -13,6 +13,7 @@ import { ListingPublisher } from './listingPublisher';
 import { PhoenixdBackend, StubLightningBackend, type LightningBackend } from './lightning';
 import { CashuAdapter } from './cashu';
 import { loadOrCreateOperatorWallet } from './operatorWallet';
+import { Notifier } from './notifier';
 import type { NDKCashuWallet } from '@nostr-dev-kit/wallet';
 import { ExpiryWatcher } from './expiry';
 import { BandwidthAccountant } from './accounting';
@@ -85,13 +86,34 @@ async function main(): Promise<void> {
     }
   }
 
+  // Optional NIP-17 sale notifications. Best-effort throughout — a
+  // notification failure never affects a purchase. Built after the
+  // wallet so the per-sale DMs can include the live balance.
+  let notifier: Notifier | null = null;
+  if (config.notifications.enabled) {
+    try {
+      notifier = Notifier.fromConfig(config, nsec, publisher.getNdk(), operatorWallet);
+      if (notifier) {
+        await notifier.init();
+        void notifier.notifyStartup(config.listing.title);
+        notifier.startHeartbeat(config.notifications.heartbeat_hours);
+      }
+    } catch (err) {
+      // A bad recipient pubkey is the only throw here. Don't take the
+      // whole daemon down over a notifications misconfig — log loudly
+      // and run without them.
+      console.error({ event: 'notifications-disabled', err: String(err) });
+      notifier = null;
+    }
+  }
+
   const expiry = new ExpiryWatcher(db, wg);
   expiry.start();
 
   const accounting = new BandwidthAccountant(db, wg);
   accounting.start();
 
-  const lnWatcher = new LightningSettlementWatcher(db, lightning, wg);
+  const lnWatcher = new LightningSettlementWatcher(db, lightning, wg, notifier);
   if (config.lightning.enabled) lnWatcher.start();
 
   const app = buildServer({
@@ -103,6 +125,7 @@ async function main(): Promise<void> {
     cashu,
     operatorWallet,
     operatorPubkey,
+    notifier,
   });
 
   await app.listen({ host: config.server.host, port: config.server.port });
@@ -119,6 +142,7 @@ async function main(): Promise<void> {
     expiry.stop();
     accounting.stop();
     lnWatcher.stop();
+    notifier?.stop();
     publisher.stop();
     await app.close().catch(() => {});
     db.close();

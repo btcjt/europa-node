@@ -109,6 +109,28 @@ relays = [
 nsec_file = "/etc/europa-node/secret/nsec"
 # nsec = "nsec1..."   # inline alternative
 
+# ── Sale notifications (optional) ────────────────────────────────────
+# When enabled the daemon sends you a private, encrypted message on
+# every completed sale — amount, tier, expiry — plus your current
+# NIP-60 wallet balance. It can also send a periodic balance-only
+# heartbeat. Messages are NIP-17 gift-wrapped DMs: relays see only
+# opaque kind-1059 wraps, never the contents.
+#
+# Read them in any NIP-17-capable Nostr client (0xchat, Amethyst, …)
+# signed in as `pubkey` below. The DM is sent FROM the node's nsec
+# ([nostr] above) TO `pubkey` — so point `pubkey` at your *personal*
+# npub, not the node's. Notifications are strictly best-effort: a
+# delivery failure never affects a customer's purchase.
+[notifications]
+enabled = false
+# Recipient — your personal npub (or 64-char hex). Required when
+# enabled.
+# pubkey = "npub1youroperatoraccount..."
+# Balance heartbeat: also DM your wallet balance every N hours even
+# when there are no sales. 0 disables the heartbeat (you still get a
+# message on every sale). Default 24.
+heartbeat_hours = 24
+
 # ── Listing (kind:30402 published to Nostr) ──────────────────────────
 [listing]
 # NIP-99 d-tag — unique per (your-pubkey, listing). Pick something

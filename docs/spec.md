@@ -1108,6 +1108,31 @@ Recommended update flow:
 
 Total downtime: a few seconds, no VPN connection loss.
 
+### 10.4 Sale notifications (optional)
+
+An operator who doesn't want to watch logs can have the daemon push
+a private message on every sale. The reference daemon implements this
+over **NIP-17 private direct messages** (`[notifications]` in
+`config.toml`):
+
+- On every completed sale the daemon DMs the operator the amount,
+  price tier, expiry, and current NIP-60 wallet balance.
+- An optional balance-only heartbeat repeats on a fixed cadence even
+  when there are no sales.
+- The message is a NIP-17 gift wrap (kind-14 chat rumor → kind-13
+  seal → kind-1059 wrap, NIP-44 encrypted). Relays only ever see the
+  opaque wrap; the contents are visible only to the recipient.
+- Sender is the node's own nsec; the recipient is a pubkey the
+  operator configures — point it at a personal account, not the
+  node's, and read the messages in any NIP-17 client.
+
+This is a convenience surface, not part of the marketplace protocol —
+a buyer never sees it. **It must be strictly best-effort:** a
+notification that fails to send (recipient has no reachable relay,
+NIP-44 hiccup) must never fail or delay the customer's purchase. The
+reference daemon fires every notification fire-and-forget and swallows
+its own errors.
+
 ---
 
 ## 11. Open Questions

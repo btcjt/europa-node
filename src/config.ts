@@ -51,7 +51,7 @@ const wireguardSchema = z.object({
   endpoint_host: z.string().min(1),
   endpoint_port: z.coerce.number().int().positive().default(51820),
   server_pubkey: z.string().min(1),
-  subnet_cidr: z.string().default('10.42.0.0/24'),
+  subnet_cidr: z.string().default('10.66.42.0/24'),
   dns: z.array(z.string()).default(['1.1.1.1', '9.9.9.9']),
 });
 
@@ -75,6 +75,22 @@ const nostrSchema = z.object({
   nsec_file: z.string().optional(),
 });
 
+// Optional NIP-17 sale notifications. When enabled the daemon DMs the
+// operator (privately, gift-wrapped) on every completed sale and on a
+// periodic balance heartbeat. `pubkey` is the *recipient* — the
+// operator's own npub/hex — and is required whenever enabled.
+const notificationsSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    pubkey: z.string().optional(),
+    /** Balance-heartbeat cadence in hours. 0 disables the heartbeat. */
+    heartbeat_hours: z.coerce.number().int().nonnegative().default(24),
+  })
+  .refine((n) => !n.enabled || !!n.pubkey?.trim(), {
+    message: 'notifications.pubkey is required when notifications.enabled = true',
+    path: ['pubkey'],
+  });
+
 const serverSchema = z.object({
   host: z.string().default('0.0.0.0'),
   port: z.coerce.number().int().positive().default(8080),
@@ -93,6 +109,10 @@ export const operatorConfigSchema = z.object({
   lightning: lightningSchema.default({ enabled: false, backend: 'stub' }),
   cashu: cashuSchema.default({ enabled: false }),
   nostr: nostrSchema,
+  notifications: notificationsSchema.default({
+    enabled: false,
+    heartbeat_hours: 24,
+  }),
   listing: listingSchema,
 });
 
