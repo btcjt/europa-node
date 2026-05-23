@@ -149,7 +149,17 @@ policies = ["no-logs", "no-torrents"]
 # Optional pointer to a longer prose policy.
 # policy_url = "https://vpn.example.com/policy"
 
-# Optional capacity advertisement (operator's claim, unverified).
+# Optional URL to a doc explaining your protocol-config quirks
+# (custom MTU, IPv6 caveats, split-tunnel hints). Surfaced in the
+# directory's per-operator detail page next to the policy link.
+# protocol_config_url = "https://vpn.example.com/setup"
+
+# Optional capacity ADVERTISEMENT — purely informational, surfaced in
+# the directory for operator marketing ("1 Gbps shared", etc.). The
+# daemon does NOT gate purchases on this number; the real capacity
+# ceiling is the WireGuard subnet (see [wireguard].subnet_cidr — a /24
+# is 253 peers). When the IP pool is exhausted, /purchase returns
+# `no-ip-available`.
 # capacity = { amount = 1000, unit = "Mbps" }
 
 # Free-form markdown that becomes the NIP-99 event content. Use it
@@ -199,6 +209,14 @@ unit = "week"
 # ── Purchase bounds ─────────────────────────────────────────────────
 # Optional. min_purchase prevents tiny denial-of-spam buys;
 # max_purchase prevents one client from monopolising bandwidth.
+#
+# These ARE enforced server-side: at purchase time the daemon rejects
+# tiers smaller than min_purchase (reason `below-min-purchase`) or
+# larger than max_purchase (`above-max-purchase`) before any payment
+# is swapped. Bounds and the matched tier are compared in seconds for
+# time units and in bytes for data units; a time bound paired with a
+# data tier (or vice versa) is treated as an orthogonal constraint and
+# skipped. Remove either block to disable that side of the check.
 [listing.min_purchase]
 amount = 1
 unit = "hour"

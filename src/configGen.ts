@@ -61,3 +61,81 @@ export function computeDataQuota(
   if (unit === 'TiB') return amount * 1024 * 1024 * 1024 * 1024;
   return null;
 }
+
+const TIME_UNIT_SECONDS: Record<string, number> = {
+  hour: 3_600,
+  day: 86_400,
+  week: 7 * 86_400,
+  month: 30 * 86_400,
+};
+
+const DATA_UNIT_BYTES: Record<string, number> = {
+  GiB: 1024 ** 3,
+  TiB: 1024 ** 4,
+};
+
+function unitClass(unit: string): 'time' | 'data' | null {
+  if (unit in TIME_UNIT_SECONDS) return 'time';
+  if (unit in DATA_UNIT_BYTES) return 'data';
+  return null;
+}
+
+function unitQuantity(amount: number, unit: string): number | null {
+  const t = TIME_UNIT_SECONDS[unit];
+  if (t !== undefined) return amount * t;
+  const d = DATA_UNIT_BYTES[unit];
+  if (d !== undefined) return amount * d;
+  return null;
+}
+
+/**
+ * Enforce the listing's optional `min_purchase` / `max_purchase`
+ * bounds against the matched price tier. Returns the spec's reason
+ * string when violated, or `null` when the buy is in range.
+ *
+ * Convention matches the rest of the daemon's per-unit handling:
+ *
+ *   - **Time tiers** (`hour`/`day`/`week`/`month`) advertise the price
+ *     per ONE unit, so one purchase = one unit (1 hour, 1 day, …).
+ *     Compare 1 × unit-seconds against the bound's amount × bound-unit-seconds.
+ *   - **Data tiers** (`GiB`/`TiB`) advertise an amount that doubles as
+ *     the quota (see `computeDataQuota`), so one purchase = amount × unit-bytes.
+ *     Compare that against the bound's amount × bound-unit-bytes.
+ *   - **Mixed classes** (time tier + data bound, or vice versa) are
+ *     orthogonal axes — skip the comparison; the operator advertised
+ *     two independent constraints, not a conversion.
+ *   - **Unknown units** on either side — skip; we don't invent semantics.
+ */
+export function checkPurchaseBounds(
+  tier: { amount: number; unit: string },
+  bounds: {
+    min_purchase?: { amount: number; unit: string };
+    max_purchase?: { amount: number; unit: string };
+  },
+): 'below-min-purchase' | 'above-max-purchase' | null {
+  const tierKlass = unitClass(tier.unit);
+  if (!tierKlass) return null;
+
+  const tierQty =
+    tierKlass === 'time'
+      ? unitQuantity(1, tier.unit)
+      : unitQuantity(tier.amount, tier.unit);
+  if (tierQty === null) return null;
+
+  if (bounds.min_purchase && unitClass(bounds.min_purchase.unit) === tierKlass) {
+    const minQty = unitQuantity(
+      bounds.min_purchase.amount,
+      bounds.min_purchase.unit,
+    );
+    if (minQty !== null && tierQty < minQty) return 'below-min-purchase';
+  }
+  if (bounds.max_purchase && unitClass(bounds.max_purchase.unit) === tierKlass) {
+    const maxQty = unitQuantity(
+      bounds.max_purchase.amount,
+      bounds.max_purchase.unit,
+    );
+    if (maxQty !== null && tierQty > maxQty) return 'above-max-purchase';
+  }
+
+  return null;
+}

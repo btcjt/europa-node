@@ -10,6 +10,7 @@ import type { LightningBackend } from '../lightning';
 import { newPreimage } from '../lightning';
 import { aesEncryptWithPreimage } from '../encrypt';
 import {
+  checkPurchaseBounds,
   computeDataQuota,
   computeExpiresAt,
   generateWireGuardConfig,
@@ -113,6 +114,18 @@ export function registerLnurlRoutes(app: FastifyInstance, deps: LnurlRouteDeps):
     if (!matchedTier) {
       reply.code(400);
       return { status: 'error', reason: 'price-mismatch' };
+    }
+    // Enforce the listing's optional min/max_purchase bounds against
+    // the matched tier before issuing the invoice — otherwise the
+    // buyer pays and only then learns the tier they picked isn't
+    // honored.
+    const boundsReason = checkPurchaseBounds(matchedTier, {
+      min_purchase: deps.config.listing.min_purchase,
+      max_purchase: deps.config.listing.max_purchase,
+    });
+    if (boundsReason) {
+      reply.code(400);
+      return { status: 'error', reason: boundsReason };
     }
     if (matchedTier.currency === 'sat' && matchedTier.amount > amountSat) {
       reply.code(402);

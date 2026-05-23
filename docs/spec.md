@@ -426,7 +426,7 @@ For OpenVPN purchases, `client_pubkey` is replaced with `client_id` (an arbitrar
 ```json
 {
   "status": "error",
-  "reason": "invalid-token|wrong-mint|wrong-p2pk|amount-mismatch|double-spent|expired-auth|bad-request|policy",
+  "reason": "invalid-token|wrong-mint|wrong-p2pk|amount-mismatch|double-spent|expired-auth|bad-request|policy|below-min-purchase|above-max-purchase",
   "message": "<human-readable>"
 }
 ```
@@ -692,6 +692,10 @@ unit = "hour"
 amount = 30
 unit = "day"
 ```
+
+**`min_purchase` / `max_purchase` are enforced** (not just advertised). At purchase time the daemon compares the matched tier against these bounds and rejects with `below-min-purchase` / `above-max-purchase` if the tier's size falls outside. Time tiers are compared in seconds; data tiers in bytes; a time bound paired with a data tier (or vice versa) is treated as an orthogonal constraint and skipped. The check runs *before* a Cashu token is swapped, so a rejected buyer never loses ecash.
+
+**`capacity` is informational only** — it's published to the directory for display (operators advertising "1 Gbps shared", etc.) but the daemon doesn't gate purchases on it. The real capacity ceiling is the WireGuard subnet (`[wireguard].subnet_cidr` — a /24 yields 253 peers); when the IP pool is exhausted, `/purchase` returns `no-ip-available`.
 
 The daemon constructs the event from this config and signs it with the operator's Nostr secret key (stored separately, file mode 600). A heavily-commented reference config lives at
 [`../config.example.toml`](../config.example.toml) in this workspace.

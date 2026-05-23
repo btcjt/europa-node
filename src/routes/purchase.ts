@@ -10,6 +10,7 @@ import type { CashuAdapter } from '../cashu';
 import type { Notifier } from '../notifier';
 import { checkBudAuthHeader } from '../auth';
 import {
+  checkPurchaseBounds,
   computeDataQuota,
   computeExpiresAt,
   generateWireGuardConfig,
@@ -83,6 +84,18 @@ export function registerPurchaseRoute(app: FastifyInstance, deps: PurchaseRouteD
     if (deps.cashu.mints.length === 0) {
       reply.code(503);
       return { status: 'error', reason: 'no-cashu-in-listing' };
+    }
+
+    // Enforce the listing's optional min/max_purchase bounds against
+    // the matched tier BEFORE touching the buyer's token. Rejecting
+    // after a swap would burn ecash the operator now can't return.
+    const boundsReason = checkPurchaseBounds(auth.check.matchedPrice, {
+      min_purchase: deps.config.listing.min_purchase,
+      max_purchase: deps.config.listing.max_purchase,
+    });
+    if (boundsReason) {
+      reply.code(400);
+      return { status: 'error', reason: boundsReason };
     }
 
     let swap;

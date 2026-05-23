@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { computeDataQuota, computeExpiresAt, generateWireGuardConfig } from './configGen';
+import {
+  checkPurchaseBounds,
+  computeDataQuota,
+  computeExpiresAt,
+  generateWireGuardConfig,
+} from './configGen';
 import type { OperatorConfig } from './config';
 
 const config = {
@@ -62,5 +67,79 @@ describe('computeExpiresAt / computeDataQuota', () => {
     expect(computeDataQuota('GiB', 1)).toBe(1024 ** 3);
     expect(computeDataQuota('TiB', 1)).toBe(1024 ** 4);
     expect(computeDataQuota('day', 1)).toBeNull();
+  });
+});
+
+describe('checkPurchaseBounds', () => {
+  it('passes when no bounds are set', () => {
+    expect(checkPurchaseBounds({ amount: 100, unit: 'hour' }, {})).toBeNull();
+  });
+
+  it('time tier inside min/max passes', () => {
+    expect(
+      checkPurchaseBounds(
+        { amount: 1000, unit: 'day' },
+        {
+          min_purchase: { amount: 1, unit: 'hour' },
+          max_purchase: { amount: 30, unit: 'day' },
+        },
+      ),
+    ).toBeNull();
+  });
+
+  it('time tier below min is rejected', () => {
+    // 1-hour tier vs 8-hour minimum.
+    expect(
+      checkPurchaseBounds(
+        { amount: 100, unit: 'hour' },
+        { min_purchase: { amount: 8, unit: 'hour' } },
+      ),
+    ).toBe('below-min-purchase');
+  });
+
+  it('time tier above max is rejected', () => {
+    // 1-month tier vs 30-day maximum — month is 30 days so it equals;
+    // a slightly bigger max ceiling forces failure.
+    expect(
+      checkPurchaseBounds(
+        { amount: 8000, unit: 'month' },
+        { max_purchase: { amount: 1, unit: 'week' } },
+      ),
+    ).toBe('above-max-purchase');
+  });
+
+  it('data tier uses tier.amount × unit-bytes', () => {
+    // 10 GiB tier vs 5 GiB minimum passes; vs 50 GiB minimum fails.
+    expect(
+      checkPurchaseBounds(
+        { amount: 10, unit: 'GiB' },
+        { min_purchase: { amount: 5, unit: 'GiB' } },
+      ),
+    ).toBeNull();
+    expect(
+      checkPurchaseBounds(
+        { amount: 10, unit: 'GiB' },
+        { min_purchase: { amount: 50, unit: 'GiB' } },
+      ),
+    ).toBe('below-min-purchase');
+  });
+
+  it('mixed time/data bound is skipped (orthogonal axes)', () => {
+    // hour tier with a GiB bound — no comparison.
+    expect(
+      checkPurchaseBounds(
+        { amount: 100, unit: 'hour' },
+        { min_purchase: { amount: 5, unit: 'GiB' } },
+      ),
+    ).toBeNull();
+  });
+
+  it('unknown units are skipped', () => {
+    expect(
+      checkPurchaseBounds(
+        { amount: 100, unit: 'zorp' },
+        { min_purchase: { amount: 1, unit: 'hour' } },
+      ),
+    ).toBeNull();
   });
 });
