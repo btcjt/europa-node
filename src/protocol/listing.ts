@@ -89,10 +89,20 @@ export interface Listing {
   location: string[];
   /**
    * Geohashes from `g` tags — the marketplace's convention for putting
-   * a listing on a map without committing operators to exact GPS. Each
-   * `g` tag is one geohash at whatever precision the operator chose
-   * (typical: 4–6 chars). Empty array if the operator only published
-   * ISO `location` strings.
+   * a listing on a map without committing operators to exact GPS. The
+   * operator publishes a **hash ladder**: for an operator-set precision
+   * of e.g. `dhvr5`, the event carries `g` tags for every prefix:
+   * `d`, `dh`, `dhv`, `dhvr`, `dhvr5`. This makes relay-side `#g`
+   * filters work at any precision (`#g: ['d']` matches every listing
+   * in the eastern US; `#g: ['dhvr5']` matches just the specific
+   * cell). Empty array if the operator only published ISO `location`
+   * strings.
+   *
+   * The array preserves *all* ladder entries from the event. Use
+   * {@link mostSpecificGeohashes} when you want only the operator-set
+   * "tips" (one per region, the longest in each chain) — e.g. for
+   * map-pin rendering, where iterating the whole ladder would drop
+   * five overlapping pins per listing.
    */
   geohashes: string[];
   summary?: string;
@@ -351,7 +361,9 @@ export function buildListingTags(spec: ListingSpec): string[][] {
   }
   if (spec.status && spec.status !== 'active') tags.push(['status', spec.status]);
   if (spec.location && spec.location.length > 0) tags.push(['location', ...spec.location]);
-  for (const gh of spec.geohashes ?? []) tags.push(['g', gh]);
+  // Expand operator-supplied geohashes into a hash ladder so
+  // `#g`-filtered subscriptions match at any precision.
+  for (const gh of expandLadderForSet(spec.geohashes)) tags.push(['g', gh]);
   if (spec.summary) tags.push(['summary', spec.summary]);
   if (spec.minPurchase) {
     tags.push(['min-purchase', String(spec.minPurchase.amount), spec.minPurchase.unit]);
@@ -385,6 +397,82 @@ export function isListingStale(listing: Listing, nowSeconds: number): boolean {
 }
 
 const GEOHASH_BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';
+const GEOHASH_BASE32_SET = new Set(GEOHASH_BASE32);
+
+/**
+ * Expand a single geohash into its prefix ladder.
+ *
+ *   expandGeohashLadder('dhvr5')
+ *   // => ['d', 'dh', 'dhv', 'dhvr', 'dhvr5']
+ *
+ * Used by {@link buildListingTags} so a kind-30402 event carries one
+ * `g` tag per ladder level — `#g` filters at any precision then
+ * match. Lower-cased; returns `[]` for an empty string or any input
+ * with a non-geohash character (silent fail mirrors {@link decodeGeohash}).
+ */
+export function expandGeohashLadder(hash: string): string[] {
+  if (typeof hash !== 'string' || hash.length === 0) return [];
+  const lower = hash.toLowerCase();
+  for (const c of lower) {
+    if (!GEOHASH_BASE32_SET.has(c)) return [];
+  }
+  const out: string[] = [];
+  for (let i = 1; i <= lower.length; i++) out.push(lower.slice(0, i));
+  return out;
+}
+
+// Expand a *set* of operator-supplied geohashes into the deduped ladder
+// union, preserving first-seen order within each input chain. Internal
+// helper for buildListingTags.
+function expandLadderForSet(hashes: readonly string[] | undefined): string[] {
+  if (!hashes || hashes.length === 0) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const h of hashes) {
+    for (const step of expandGeohashLadder(h)) {
+      if (!seen.has(step)) {
+        seen.add(step);
+        out.push(step);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Pick the operator-set "tips" out of a geohash array — every entry
+ * that no other entry strictly extends. Use this when you want one
+ * value per region (e.g. for a map pin), not every level of the
+ * ladder.
+ *
+ *   mostSpecificGeohashes(['d', 'dh', 'dhv', 'dhvr', 'dhvr5'])
+ *   // => ['dhvr5']
+ *
+ *   mostSpecificGeohashes(['d', 'dh', 'dhv', 'dhvr', 'dhvr5',
+ *                          'dq', 'dq8', 'dq8x'])
+ *   // => ['dhvr5', 'dq8x']
+ *
+ * Order matches first appearance in the input. Returns `[]` for
+ * empty input. Works against a {@link Listing}'s `geohashes` field
+ * regardless of whether the operator used the ladder convention —
+ * if they only published `dhvr5` directly, that's already a tip.
+ */
+export function mostSpecificGeohashes(hashes: readonly string[]): string[] {
+  if (!hashes || hashes.length === 0) return [];
+  const out: string[] = [];
+  for (const h of hashes) {
+    let isPrefix = false;
+    for (const other of hashes) {
+      if (other.length > h.length && other.startsWith(h)) {
+        isPrefix = true;
+        break;
+      }
+    }
+    if (!isPrefix && !out.includes(h)) out.push(h);
+  }
+  return out;
+}
+
 
 /**
  * Decode a geohash to a centroid `{ lat, lon }` and the lat/lon error

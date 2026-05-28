@@ -700,6 +700,8 @@ unit = "day"
 The daemon constructs the event from this config and signs it with the operator's Nostr secret key (stored separately, file mode 600). A heavily-commented reference config lives at
 [`../config.example.toml`](../config.example.toml) in this workspace.
 
+**Geohash ladder:** From the single operator-set `[listing.region].geohash` (e.g. `"dhvr5"`), the daemon emits one `g` tag per prefix — `g d`, `g dh`, `g dhv`, `g dhvr`, `g dhvr5`. This is the standard Nostr geohash convention so that relay-side `#g` filters match at any precision (a `#g: ["d"]` filter pulls every listing in the eastern US; `#g: ["dhvr5"]` pulls just this cell). See marketplace spec §5.5 for the full rationale. The operator provides one geohash at the precision they're comfortable with; the ladder is derived.
+
 **Refresh:** Republish every hour. NIP-99 listings are replaceable; clients fetch the latest. Refreshing serves as a heartbeat — listings older than 30 days are considered stale.
 
 **Status changes:** When the operator wants to temporarily pause (going offline for maintenance), publish with `["status", "sold"]`. When resuming, publish with `["status", "active"]`.
