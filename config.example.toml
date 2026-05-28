@@ -179,6 +179,9 @@ sub = "US-East"
 # Geohash for map plotting. Precision is your choice — typical 4-6 chars.
 # 4 chars ≈ 20km cell (region honesty); 6 chars ≈ 600m cell (datacenter honesty).
 # Generate at geohash.org or with a CLI tool.
+# Set ONE value here — the daemon publishes the full prefix ladder
+# automatically (one `g` tag per level: `d`, `dr`, `dr5`, …) so that
+# directory `#g` filters match at any precision. See docs/spec.md §3.7.
 geohash = "dr5regw"
 
 # ── Pricing ─────────────────────────────────────────────────────────

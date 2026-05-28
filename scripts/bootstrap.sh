@@ -58,7 +58,7 @@ prompt D_TAG        "vpn-$(date +%Y)"      "NIP-99 listing identifier (d-tag)"
 prompt TITLE        "My Europa Node"       "Listing title shown to clients"
 prompt COUNTRY      "US"                   "ISO country code"
 prompt REGION       ""                     "Sub-region (e.g. US-East). Blank = omit"
-prompt GEOHASH      ""                     "Geohash for the map view (blank = omit)"
+prompt GEOHASH      ""                     "Geohash for the map view (one value at your chosen precision; the daemon emits the full prefix ladder. Blank = omit)"
 
 # ── Generate nsec ──────────────────────────────────────────────────
 NSEC_FILE="$SECRETS_DIR/nsec"

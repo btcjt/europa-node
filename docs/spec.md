@@ -227,7 +227,7 @@ Required fields:
 ```json
 {
   "software": "europa-node",
-  "version": "0.2.0",
+  "version": "0.5.0",
   "spec_version": "vpn-marketplace/1",
 
   "pubkey": "<hex 32-byte operator pubkey>",
@@ -256,6 +256,7 @@ Notes:
 - `spec_version` is the VPN-marketplace protocol revision. Today there's exactly one: `vpn-marketplace/1`. Future protocol breaks bump this, and clients can branch on it.
 - `pubkey` is the operator's 32-byte hex Nostr pubkey (not bech32 npub). A directory site that's about to send a buyer to this daemon should match it against the listing event's `pubkey`. A mismatch usually means the operator's listing has been impersonated or the operator rotated keys without republishing.
 - `endpoint` is the public hostname the daemon thinks it lives at. A common misconfig is moving the daemon to a new host and forgetting to update the listing's `payment` tags — `endpoint` here vs the hostnames in the listing's `payment` tags reveals that drift.
+- `region.geohash` is the *operator-set* source value. The kind-30402 listing carries the full prefix ladder (`["g","d"]`, `["g","dh"]`, …, `["g","dhvr5"]`) — see §3.7. `/info` reports the source; consumers wanting the wire shape parse the listing event.
 - `mints`, `cashu_purchase_endpoints`, `lightning_endpoints` are deduped projections of the configured `payment_methods`. Whenever a buyer-side flow needs "which mint do I top up at to buy from this operator", these arrays answer without re-parsing payment tags. Most operators have one entry per array.
 - `payment_methods` (the string array `["lightning", "cashu"]`) is kept for backwards-compat with tooling written against earlier `/info` versions. New consumers should prefer `mints` / `cashu_purchase_endpoints` / `lightning_endpoints`.
 
