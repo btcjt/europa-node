@@ -98,6 +98,19 @@ export function registerPurchaseRoute(app: FastifyInstance, deps: PurchaseRouteD
       return { status: 'error', reason: boundsReason };
     }
 
+    // Pre-check IP pool exhaustion BEFORE the swap — once we call
+    // `cashu.receive()` the buyer's tokens are spent at the mint and
+    // (next block) persisted to the operator wallet. A `no-ip-available`
+    // failure AFTER the swap means the buyer pays and gets nothing,
+    // with no refund path. There's still a small race window between
+    // this check and the real `ipPool.next()` call below, but in the
+    // worst case that race fires `no-ip-available` BEFORE the swap
+    // instead of AFTER — buyer keeps their money.
+    if (!deps.ipPool.hasAvailable(deps.db)) {
+      reply.code(503);
+      return { status: 'error', reason: 'no-ip-available' };
+    }
+
     let swap;
     try {
       swap = await deps.cashu.receive(cashuToken);

@@ -52,7 +52,14 @@ export class ExpiryWatcher {
       // OpenVPN revoke: out of scope for first iteration; the operator-spec
       // walks through easyrsa revoke + CRL regen if that ships later.
     } catch (err) {
-      console.warn({ event: 'expire-peer-failed', session: row.session_id, err: String(err) });
+      // Bail without marking expired. If we proceed, the IP is freed
+      // back to the pool but the kernel still has the old pubkey routed
+      // to it; the next purchase would reuse the IP and the kernel
+      // ends up accepting handshakes for TWO pubkeys at the same
+      // address. Better to log and retry next tick — the IP stays
+      // claimed in the DB until the kernel actually drops the peer.
+      console.error({ event: 'expire-peer-failed', session: row.session_id, err: String(err) });
+      return;
     }
     this.db.setStatus(row.session_id, 'expired');
     console.log({ event: 'session-expired', session: row.session_id, ip: row.assigned_ip });

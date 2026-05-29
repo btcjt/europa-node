@@ -25,17 +25,40 @@ export interface CashuSwapResult {
  * swap. The adapter keeps one wallet per mint and dispatches on the
  * decoded token's `mint` field.
  */
+/**
+ * Canonicalise a mint URL so two URLs that resolve to the same mint
+ * compare equal: lowercase the scheme + host (preserving any path),
+ * strip trailing slashes. Wallets often emit `https://Mint.com/` while
+ * operators publish `https://mint.com` — without normalisation we'd
+ * reject the token as `wrong-mint`. Same shape europa-website uses
+ * client-side in `lib/cashuToken.ts:normalizeMint`.
+ */
+export function normalizeMintUrl(url: string): string {
+  const trimmed = url.trim().replace(/\/+$/, '');
+  // Lowercase the scheme + host but keep the path's case (some mints
+  // are sub-path-mounted; the OS-level path can be case-sensitive).
+  try {
+    const u = new URL(trimmed);
+    const lowered = `${u.protocol.toLowerCase()}//${u.host.toLowerCase()}${u.pathname.replace(/\/+$/, '')}${u.search}${u.hash}`;
+    return lowered.replace(/\/+$/, '');
+  } catch {
+    return trimmed.toLowerCase();
+  }
+}
+
 export class CashuAdapter {
-  /** mint URL → wallet bound to that mint. */
+  /** Normalised mint URL → wallet bound to that mint. */
   private readonly wallets = new Map<string, CashuWallet>();
   private readonly p2pkPriv: string | undefined;
 
   constructor(mintUrls: string[], p2pkPrivkeyHex?: string) {
     for (const url of mintUrls) {
-      // Dedupe — an operator listing the same mint on two price tiers
-      // would otherwise build two wallets for it.
-      if (!this.wallets.has(url)) {
-        this.wallets.set(url, new CashuWallet(new CashuMint(url)));
+      const key = normalizeMintUrl(url);
+      // Dedupe — an operator listing the same mint on two price tiers,
+      // or two URLs differing only in case/trailing slash, would
+      // otherwise build two wallets for the same mint.
+      if (!this.wallets.has(key)) {
+        this.wallets.set(key, new CashuWallet(new CashuMint(url)));
       }
     }
     this.p2pkPriv = p2pkPrivkeyHex;
@@ -62,7 +85,9 @@ export class CashuAdapter {
     if (!decoded.proofs || decoded.proofs.length === 0) {
       throw new Error('invalid-token');
     }
-    const wallet = decoded.mint ? this.wallets.get(decoded.mint) : undefined;
+    const wallet = decoded.mint
+      ? this.wallets.get(normalizeMintUrl(decoded.mint))
+      : undefined;
     if (!wallet) {
       // Token is from a mint this operator doesn't accept. `wrong-mint`
       // is the spec reason code; the buyer-side error map explains it

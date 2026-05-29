@@ -40,4 +40,23 @@ describe('IpPool', () => {
     const pool = new IpPool('10.0.0.0/30');
     expect(pool.next(fakeDb(['10.0.0.2']))).toBeNull();
   });
+
+  it('hasAvailable agrees with next() for the empty case', () => {
+    const pool = new IpPool('10.0.0.0/30');
+    expect(pool.hasAvailable(fakeDb([]))).toBe(true);
+    expect(pool.hasAvailable(fakeDb(['10.0.0.2']))).toBe(false);
+  });
+
+  it('hasAvailable is the cheap pre-check that prevents money-loss', () => {
+    // Used in routes/purchase.ts to fail-fast BEFORE swapping the
+    // buyer's cashu token — a `no-ip-available` after the swap would
+    // burn ecash with no refund path.
+    const pool = new IpPool('10.42.0.0/24');
+    // 252 of 253 used → still available
+    const usedAll = Array.from({ length: 252 }, (_, i) => `10.42.0.${i + 2}`);
+    expect(pool.hasAvailable(fakeDb(usedAll))).toBe(true);
+    // All 253 used → exhausted
+    const usedReally = Array.from({ length: 253 }, (_, i) => `10.42.0.${i + 2}`);
+    expect(pool.hasAvailable(fakeDb(usedReally))).toBe(false);
+  });
 });

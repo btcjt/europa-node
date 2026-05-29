@@ -1,6 +1,6 @@
 {
   "name": "europa-node",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Reference operator daemon for the VPN Marketplace (NIP-99 + LNURL + Cashu + WireGuard).",
   "license": "MIT",
   "repository": "github:btcjt/europa-node",

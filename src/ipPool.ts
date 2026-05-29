@@ -16,6 +16,21 @@ export class IpPool {
     return null;
   }
 
+  /**
+   * Cheap read-only "do I have at least one free IP?" check. Used by
+   * `/purchase` to fail fast BEFORE swapping the buyer's cashu token —
+   * a `no-ip-available` after the swap means the buyer pays and gets
+   * nothing (no refund path). Cheaper than `next()` because it stops
+   * at the first hit instead of returning the IP.
+   */
+  hasAvailable(db: OperatorDb): boolean {
+    const used = db.usedIps();
+    for (const ip of this.all) {
+      if (!used.has(ip)) return true;
+    }
+    return false;
+  }
+
   contains(ip: string): boolean {
     return this.all.includes(ip);
   }
