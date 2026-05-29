@@ -147,7 +147,24 @@ export function registerLnurlRoutes(app: FastifyInstance, deps: LnurlRouteDeps):
       return { status: 'error', reason: 'no-ip-available' };
     }
 
-    const wgConfig = generateWireGuardConfig({ config: deps.config, assignedIp: ip });
+    // Compute session timing + quota first so the .conf can carry them
+    // in its informational `#`-comment header. Header is purely human-
+    // facing; WireGuard ignores `#` lines.
+    const now = Math.floor(Date.now() / 1000);
+    const expiresAt = computeExpiresAt(matchedTier.unit, now);
+    const dataQuota = computeDataQuota(matchedTier.unit, matchedTier.amount);
+
+    const wgConfig = generateWireGuardConfig({
+      config: deps.config,
+      assignedIp: ip,
+      meta: {
+        purchasedAt: now,
+        expiresAt,
+        priceLabel: `${matchedTier.amount} ${matchedTier.currency} / ${matchedTier.unit}`,
+        dataQuotaBytes: dataQuota,
+        paymentMethod: 'lightning',
+      },
+    });
     const { preimage, paymentHash } = newPreimage();
     const invoice = await deps.lightning.createInvoice({
       amountSat,
@@ -157,7 +174,6 @@ export function registerLnurlRoutes(app: FastifyInstance, deps: LnurlRouteDeps):
 
     const enc = aesEncryptWithPreimage(wgConfig, preimage);
 
-    const now = Math.floor(Date.now() / 1000);
     const sessionId = deps.db.newSessionId();
     deps.db.insertSession({
       session_id: sessionId,
@@ -165,8 +181,8 @@ export function registerLnurlRoutes(app: FastifyInstance, deps: LnurlRouteDeps):
       client_identity: parsed.comment.client_pubkey,
       assigned_ip: ip,
       purchased_at: now,
-      expires_at: computeExpiresAt(matchedTier.unit, now),
-      data_quota_bytes: computeDataQuota(matchedTier.unit, matchedTier.amount),
+      expires_at: expiresAt,
+      data_quota_bytes: dataQuota,
       data_used_bytes: 0,
       price_amount: matchedTier.amount,
       price_currency: matchedTier.currency,

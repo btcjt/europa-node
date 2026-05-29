@@ -1,17 +1,68 @@
 import type { OperatorConfig } from './config';
 
 /**
+ * Optional metadata for the comment header at the top of the generated
+ * `.conf`. WireGuard's parser ignores any line starting with `#`, so
+ * this is purely human-facing — most mobile import previews show it.
+ * All fields are optional; missing values are omitted from the header.
+ */
+export interface TunnelMeta {
+  purchasedAt?: number;            // unix seconds
+  expiresAt?: number | null;       // unix seconds; null = no time expiry
+  priceLabel?: string;              // e.g. "100 sat / hour"
+  dataQuotaBytes?: number | null;  // null = no data quota
+  paymentMethod?: 'lightning' | 'cashu';
+}
+
+function formatUtc(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+}
+
+function formatBytes(n: number): string {
+  if (n >= 1024 ** 4) return `${(n / 1024 ** 4).toFixed(1)} TiB`;
+  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GiB`;
+  if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toFixed(1)} MiB`;
+  return `${n} bytes`;
+}
+
+function buildHeader(config: OperatorConfig, meta: TunnelMeta): string {
+  const lines: string[] = [];
+  lines.push('# europa-node tunnel');
+  lines.push(`# Operator:  ${config.listing.title} (${config.wireguard.endpoint_host})`);
+  lines.push(`# Listing:   ${config.listing.d_tag}`);
+  if (meta.purchasedAt) lines.push(`# Purchased: ${formatUtc(meta.purchasedAt)}`);
+  if (meta.expiresAt) lines.push(`# Expires:   ${formatUtc(meta.expiresAt)}`);
+  if (meta.dataQuotaBytes) lines.push(`# Quota:     ${formatBytes(meta.dataQuotaBytes)}`);
+  if (meta.priceLabel) lines.push(`# Tier:      ${meta.priceLabel}`);
+  if (meta.paymentMethod) lines.push(`# Payment:   ${meta.paymentMethod}`);
+  lines.push('#');
+  lines.push('# Replace the placeholder PrivateKey below with the private key');
+  lines.push('# matching the public key you sent at purchase, then import into');
+  lines.push("# WireGuard. Don't share this file — the Address identifies your");
+  lines.push('# session to the operator.');
+  lines.push('');
+  return lines.join('\n') + '\n';
+}
+
+/**
  * Generate a complete WireGuard `.conf` file for the client to import.
  * The PrivateKey line is intentionally blank — the client generated
  * their key locally, the operator only ever sees the public key.
+ *
+ * Pass `meta` to prepend a `#`-comment header with operator + purchase
+ * details (see {@link TunnelMeta}). The header is informational only
+ * — WireGuard ignores `#` lines — but mobile import previews and a
+ * later glance at the file both surface it.
  */
 export function generateWireGuardConfig(opts: {
   config: OperatorConfig;
   assignedIp: string;
+  meta?: TunnelMeta;
 }): string {
-  const { config, assignedIp } = opts;
+  const { config, assignedIp, meta } = opts;
   const dns = config.wireguard.dns.join(', ');
-  return `[Interface]
+  const header = meta ? buildHeader(config, meta) : '';
+  return `${header}[Interface]
 PrivateKey = <PASTE YOUR OWN PRIVATE KEY HERE>
 Address = ${assignedIp}/32
 DNS = ${dns}

@@ -195,7 +195,17 @@ export function registerPurchaseRoute(app: FastifyInstance, deps: PurchaseRouteD
 
     return {
       status: 'ok',
-      config: generateWireGuardConfig({ config: deps.config, assignedIp: ip }),
+      config: generateWireGuardConfig({
+        config: deps.config,
+        assignedIp: ip,
+        meta: {
+          purchasedAt: now,
+          expiresAt,
+          priceLabel: `${auth.check.matchedPrice.amount} ${auth.check.matchedPrice.currency} / ${auth.check.matchedPrice.unit}`,
+          dataQuotaBytes: dataQuota,
+          paymentMethod: 'cashu',
+        },
+      }),
       expires_at: expiresAt,
     };
   });

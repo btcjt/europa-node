@@ -44,6 +44,60 @@ describe('generateWireGuardConfig', () => {
     expect(out).toMatch(/Endpoint = op\.example:51820/);
     expect(out).toMatch(/AllowedIPs = 0\.0\.0\.0\/0, ::\/0/);
   });
+
+  it('omits the header when no `meta` is passed', () => {
+    const out = generateWireGuardConfig({ config, assignedIp: '10.42.0.42' });
+    expect(out.startsWith('[Interface]')).toBe(true);
+    expect(out).not.toContain('# europa-node tunnel');
+  });
+
+  it('prepends a #-comment header with operator + purchase details when `meta` is passed', () => {
+    const out = generateWireGuardConfig({
+      config,
+      assignedIp: '10.42.0.42',
+      meta: {
+        purchasedAt: 1_700_000_000,
+        expiresAt: 1_700_003_600, // +1h
+        priceLabel: '100 sat / hour',
+        paymentMethod: 'cashu',
+      },
+    });
+    // Header lines appear before [Interface] and are all comments.
+    const headerLines = out.split('\n').slice(0, 12);
+    for (const line of headerLines) {
+      if (line.length > 0) expect(line.startsWith('#')).toBe(true);
+    }
+    expect(out).toMatch(/# europa-node tunnel/);
+    expect(out).toMatch(/# Operator:.*op\.example/);
+    expect(out).toMatch(/# Purchased: 2023-11-14 \d{2}:\d{2} UTC/);
+    expect(out).toMatch(/# Expires:   2023-11-14 \d{2}:\d{2} UTC/);
+    expect(out).toMatch(/# Tier:      100 sat \/ hour/);
+    expect(out).toMatch(/# Payment:   cashu/);
+    expect(out).toMatch(/\[Interface\]/);
+  });
+
+  it('omits header fields whose meta value is missing/null', () => {
+    const out = generateWireGuardConfig({
+      config,
+      assignedIp: '10.42.0.42',
+      meta: { paymentMethod: 'lightning' }, // only paymentMethod set
+    });
+    expect(out).toMatch(/# europa-node tunnel/);
+    expect(out).toMatch(/# Payment:   lightning/);
+    expect(out).not.toMatch(/# Purchased:/);
+    expect(out).not.toMatch(/# Expires:/);
+    expect(out).not.toMatch(/# Quota:/);
+    expect(out).not.toMatch(/# Tier:/);
+  });
+
+  it('renders data quota in GiB for typical sizes', () => {
+    const out = generateWireGuardConfig({
+      config,
+      assignedIp: '10.42.0.42',
+      meta: { dataQuotaBytes: 100 * 1024 ** 3 },
+    });
+    expect(out).toMatch(/# Quota:     100\.0 GiB/);
+  });
 });
 
 describe('computeExpiresAt / computeDataQuota', () => {
