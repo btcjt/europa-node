@@ -1,11 +1,18 @@
 # europa-node
 
-Reference operator daemon for the **VPN Marketplace** — a brand-neutral
-Nostr protocol (CC0) for selling WireGuard tunnels in exchange for
-Lightning or Cashu payments. Publishes a NIP-99 (`kind: 30402`)
-listing, runs LNURL-pay + Cashu purchase endpoints, generates
-WireGuard configs after payment, and manages peer lifecycle on a
-host-network WireGuard interface.
+Reference operator daemon for the **Europa Protocol** — an open Nostr
+protocol (CC0) for selling WireGuard tunnels in exchange for Lightning
+or Cashu payments. Publishes a NIP-99 (`kind: 30402`) listing, runs
+LNURL-pay + Cashu purchase endpoints, generates WireGuard configs
+after payment, and manages peer lifecycle on a host-network WireGuard
+interface.
+
+(The protocol was previously named "VPN Marketplace"; the rename
+landed in europa-node 0.7.0. Operators running older builds — which
+still publish under the legacy `t: vpn-marketplace` tag — remain
+visible to conformant directories during a transition window. See
+[§11.1 of `docs/spec.md`](docs/spec.md#111-legacy-tag-back-compat)
+for the migration detail.)
 
 Spec: [`docs/spec.md`](docs/spec.md) (CC0). Implementation code: MIT.
 

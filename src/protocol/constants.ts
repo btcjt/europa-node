@@ -1,7 +1,7 @@
 /**
- * Spec defaults from §11 of docs/architecture/vpn-marketplace/spec.md.
+ * Spec defaults from §11 of docs/architecture/europa-protocol/spec.md.
  *
- * The marketplace is built almost entirely from existing Nostr
+ * The Europa Protocol is built almost entirely from existing Nostr
  * primitives — these constants name the kinds and discriminator
  * tags every implementation must agree on.
  */
@@ -20,8 +20,26 @@ export const KIND_TRUSTED_ASSERTION = 30382;
 export const KIND_BADGE_AWARD = 8;
 export const KIND_BADGE_DEFINITION = 30009;
 
-/** Every marketplace listing carries `["t", "vpn-marketplace"]`. */
-export const MARKETPLACE_TAG = 'vpn-marketplace';
+/**
+ * Every Europa Protocol listing carries `["t", "europa-protocol"]`.
+ * New operators (europa-node ≥ 0.7.0) emit only this tag.
+ */
+export const EUROPA_PROTOCOL_TAG = 'europa-protocol';
+
+/**
+ * Legacy tag value emitted by europa-node ≤ 0.6.x (when the protocol
+ * was still named "VPN Marketplace"). The directory site
+ * (europa-website) subscribes to BOTH this and {@link EUROPA_PROTOCOL_TAG}
+ * during a transition window so legacy listings remain visible to
+ * buyers — no operator action required. Sunset target: 2026-12-01,
+ * once known operators have rolled forward to 0.7.x+.
+ *
+ * @deprecated New code should publish under `EUROPA_PROTOCOL_TAG`.
+ *   This export only exists so consumers (currently just
+ *   `apps/europa-website/lib/useListings.ts`) can keep accepting
+ *   legacy listings without hard-coding the string.
+ */
+export const LEGACY_MARKETPLACE_TAG = 'vpn-marketplace';
 
 /** §10: listings older than 30 days without a refresh are considered stale. */
 export const LISTING_STALENESS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -55,10 +73,16 @@ export const AUTH_EXPIRATION_SECONDS = 5 * 60;
 /** Per-spec recommended interval at which operators republish the listing. */
 export const LISTING_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-/** Stable version string carried in the LNURL-pay purchase comment (§6.3). */
+/**
+ * Stable version string carried in the LNURL-pay purchase comment (§6.3).
+ * Kept as `vpn-marketplace/1` for wire compat — the comment format is
+ * what wallets parse and the v1 wire shape is unchanged. Versioned
+ * separately from the protocol name precisely so a brand refactor like
+ * this doesn't break wallets in the field.
+ */
 export const PURCHASE_COMMENT_VERSION = 'vpn-marketplace/1';
 
-/** NIP-56 standard report types. The marketplace doesn't add new ones — it only namespaces with `t: vpn-marketplace`. */
+/** NIP-56 standard report types. Europa Protocol doesn't add new ones — it only namespaces with `t: europa-protocol`. */
 export const NIP56_REPORT_TYPES = [
   'nudity',
   'malware',

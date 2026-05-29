@@ -14,7 +14,8 @@ import {
   LISTING_STALENESS_MS,
   LISTING_STATUS,
   LIGHTNING_MECHANISMS,
-  MARKETPLACE_TAG,
+  EUROPA_PROTOCOL_TAG,
+  LEGACY_MARKETPLACE_TAG,
   SUPPORTED_PAYMENT_METHODS,
   SUPPORTED_PRICE_UNITS,
   SUPPORTED_VPN_PROTOCOLS,
@@ -236,8 +237,14 @@ export function parseListing(event: NostrEventShape): ParseResult {
     .map((t) => t[1])
     .filter((v): v is string => Boolean(v));
 
-  if (!tValues.includes(MARKETPLACE_TAG)) {
-    return { ok: false, reason: 'not-vpn-marketplace' };
+  // Accept BOTH the canonical Europa Protocol tag and the legacy
+  // `vpn-marketplace` tag — operators on europa-node ≤ 0.6.x still
+  // emit only the legacy value, and we want them visible to buyers
+  // during the transition window. See `LEGACY_MARKETPLACE_TAG` in
+  // ./constants.ts for the sunset target. Emit always uses the new
+  // tag (see `buildListingTags` below).
+  if (!tValues.includes(EUROPA_PROTOCOL_TAG) && !tValues.includes(LEGACY_MARKETPLACE_TAG)) {
+    return { ok: false, reason: 'not-europa-protocol' };
   }
 
   const protocols: VpnProtocol[] = [];
@@ -305,8 +312,14 @@ export function parseListing(event: NostrEventShape): ParseResult {
   const policyUrl = tagMap.get('policy-url')?.[0]?.[1];
   const protocolConfigUrl = tagMap.get('protocol-config')?.[0]?.[1];
 
+  // Both the new and the legacy discriminator tags are protocol-level,
+  // not user-defined topics — strip both so a legacy listing's
+  // `t: vpn-marketplace` doesn't show up in `listing.topics`.
   const topics = tValues.filter(
-    (v) => v !== MARKETPLACE_TAG && !VPN_PROTOCOL_SET.has(v),
+    (v) =>
+      v !== EUROPA_PROTOCOL_TAG &&
+      v !== LEGACY_MARKETPLACE_TAG &&
+      !VPN_PROTOCOL_SET.has(v),
   );
 
   return {
@@ -342,11 +355,17 @@ export function buildListingTags(spec: ListingSpec): string[][] {
   const tags: string[][] = [
     ['d', spec.identifier],
     ['title', spec.title],
-    ['t', MARKETPLACE_TAG],
+    ['t', EUROPA_PROTOCOL_TAG],
   ];
   for (const proto of spec.protocols) tags.push(['t', proto]);
   for (const topic of spec.topics ?? []) {
-    if (topic !== MARKETPLACE_TAG && !VPN_PROTOCOL_SET.has(topic)) tags.push(['t', topic]);
+    if (
+      topic !== EUROPA_PROTOCOL_TAG &&
+      topic !== LEGACY_MARKETPLACE_TAG &&
+      !VPN_PROTOCOL_SET.has(topic)
+    ) {
+      tags.push(['t', topic]);
+    }
   }
   for (const p of spec.prices) tags.push(['price', String(p.amount), p.currency, p.unit]);
   for (const pay of spec.payments) {

@@ -10,7 +10,12 @@
  * categories is the marketplace's job; thresholding is the user's.
  */
 
-import { KIND_REPORT, MARKETPLACE_TAG, NIP56_REPORT_TYPES } from './constants';
+import {
+  KIND_REPORT,
+  EUROPA_PROTOCOL_TAG,
+  LEGACY_MARKETPLACE_TAG,
+  NIP56_REPORT_TYPES,
+} from './constants';
 import type { Nip56ReportType } from './constants';
 import type { NostrEventShape } from './listing';
 
@@ -38,12 +43,19 @@ export type ReportParseResult =
 export function parseReport(event: NostrEventShape): ReportParseResult {
   if (event.kind !== KIND_REPORT) return { ok: false, reason: 'wrong-kind' };
 
-  let isMarketplace = false;
+  // Accept both the canonical Europa Protocol tag and the legacy
+  // `vpn-marketplace` tag — historical reports tagged with the old
+  // value still count during the back-compat window.
+  let isProtocolTagged = false;
   const targets: Report['targets'] = [];
   const eventTargets: string[] = [];
   for (const tag of event.tags) {
-    if (tag[0] === 't' && tag[1] === MARKETPLACE_TAG) isMarketplace = true;
-    else if (tag[0] === 'p') {
+    if (
+      tag[0] === 't' &&
+      (tag[1] === EUROPA_PROTOCOL_TAG || tag[1] === LEGACY_MARKETPLACE_TAG)
+    ) {
+      isProtocolTagged = true;
+    } else if (tag[0] === 'p') {
       const pubkey = tag[1];
       if (pubkey) targets.push({ pubkey, reportType: tag[2] });
     } else if (tag[0] === 'e') {
@@ -51,7 +63,7 @@ export function parseReport(event: NostrEventShape): ReportParseResult {
       if (id) eventTargets.push(id);
     }
   }
-  if (!isMarketplace) return { ok: false, reason: 'not-vpn-marketplace' };
+  if (!isProtocolTagged) return { ok: false, reason: 'not-europa-protocol' };
   if (targets.length === 0 && eventTargets.length === 0) {
     return { ok: false, reason: 'no-target' };
   }

@@ -1,4 +1,4 @@
-# VPN Marketplace: Operator Setup Specification
+# Europa Protocol: Operator Setup Specification
 
 **Status:** Draft v1
 **Audience:** Implementing team / operators who want to run a node
@@ -253,7 +253,7 @@ Notes:
 
 - `software` lets clients differentiate europa-node from alternative implementations as they appear. The string is a free-form identifier — no enum, no central registry.
 - `version` is the daemon's own version (`package.json` version for europa-node). Bump on every release tag; useful for bug reports.
-- `spec_version` is the VPN-marketplace protocol revision. Today there's exactly one: `vpn-marketplace/1`. Future protocol breaks bump this, and clients can branch on it.
+- `spec_version` is the Europa Protocol wire revision. The literal value `"vpn-marketplace/1"` is preserved from the protocol's prior name as a wire-compat identifier — wallets and clients parse this string verbatim, so it stays stable across the brand-name change. Future protocol breaks bump this string (e.g. `"vpn-marketplace/2"`), and clients can branch on it.
 - `pubkey` is the operator's 32-byte hex Nostr pubkey (not bech32 npub). A directory site that's about to send a buyer to this daemon should match it against the listing event's `pubkey`. A mismatch usually means the operator's listing has been impersonated or the operator rotated keys without republishing.
 - `endpoint` is the public hostname the daemon thinks it lives at. A common misconfig is moving the daemon to a new host and forgetting to update the listing's `payment` tags — `endpoint` here vs the hostnames in the listing's `payment` tags reveals that drift.
 - `region.geohash` is the *operator-set* source value. The kind-30402 listing carries the full prefix ladder (`["g","d"]`, `["g","dh"]`, …, `["g","dhvr5"]`) — see §3.7. `/info` reports the source; consumers wanting the wire shape parse the listing event.
