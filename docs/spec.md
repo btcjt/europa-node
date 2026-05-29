@@ -218,7 +218,7 @@ All endpoints served over HTTPS on a domain the operator controls (e.g. `vpn.ope
 | `/info`            | GET    | Daemon self-description as JSON (software, version, mints, listing snapshot) |
 | `/health`          | GET    | Health check for monitoring                |
 
-#### `/info` response shape <a id="info-endpoint"></a>
+#### `/info` response shape
 
 `/info` is the daemon's introspection JSON. Buyers and directory sites hit it to (a) verify the operator pubkey matches the listing they're looking at, (b) discover the concrete mint + endpoint URLs without parsing NIP-99 `payment` tags, and (c) tell which operator-daemon implementation and spec revision they're talking to (relevant once there's more than one).
 
@@ -262,7 +262,7 @@ Notes:
 
 Responses are always JSON — no content negotiation, no HTML view. The europa-website operator-detail page is the canonical human-friendly view; `/info` is the wire surface.
 
-#### CORS requirement <a id="cors-requirement"></a>
+#### CORS requirement
 
 The marketplace is intentionally cross-origin. A buyer's browser fetches your `/info` and POSTs to your `/purchase` from whatever directory site or client they happen to be using — `europa.westernbtc.com`, a fork, a CLI in a web-served notebook, a third-party Nostr client. **Your daemon (or the reverse proxy in front of it) MUST send CORS headers** or browsers will refuse to read the response, even when the daemon answered correctly.
 
