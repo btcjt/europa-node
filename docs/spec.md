@@ -932,7 +932,18 @@ Three common setups:
 
 **Bare-metal colocation:** Highest control, highest cost. Suitable for serious operators running significant capacity.
 
-### 7.2 Bandwidth
+### 7.2 Hardware
+
+The daemon itself is a small Node.js process; the actual VPN packet path runs in the Linux kernel's WireGuard module, which is essentially free on modern CPUs (AES-NI saturates 1 Gbps on a single core). Practical sizing:
+
+- **1 vCPU, 1 GB RAM, 10 GB disk** — fine for a node up to ~100 Mbps sustained with phoenixd as the Lightning backend running on the same host. phoenixd alone wants ~512 MB, the daemon ~150 MB, the rest is headroom.
+- **2 vCPU, 2 GB RAM, 25 GB disk** — comfortable for 1 Gbps sustained, several hundred active peers, and Lightning + ecash side-by-side.
+
+Kernel WireGuard handles thousands of peers per interface without stress; the userspace `wireguard-go` build is markedly slower past a few hundred peers. Use kernel WireGuard (default on Linux ≥ 5.6, or via the `wireguard-dkms` package on older kernels).
+
+The real ceilings are bandwidth (next section) and the IP pool (§7.4), not the CPU.
+
+### 7.3 Bandwidth
 
 VPN traffic is sustained. Estimate based on capacity:
 
@@ -941,7 +952,17 @@ VPN traffic is sustained. Estimate based on capacity:
 
 Most VPS plans include some bandwidth (1–10 TB), with overage charged. Pick a plan matching expected traffic. Operators that hit caps may want unmetered providers (BuyVM, FranTech, Cock.li-style).
 
-### 7.3 Legal considerations
+### 7.4 Concurrent connections
+
+Three things bound how many simultaneous customers a node can serve:
+
+1. **The IP pool.** `[wireguard].subnet_cidr` defines the address space. The default `10.66.42.0/24` reserves 253 client addresses (`.1` is the server, `.255` is broadcast). When the pool is full, `/purchase` returns `no-ip-available`. Raise the ceiling by setting a wider subnet (`/23` → 509, `/22` → 1,021, `/16` → ~65k) in both `config.toml` and the host's `wg0.conf` `Address`. Don't change the default to `10.42.0.0/24` — that's K3s' default Flannel pod network and collides with `cni0` on K3s hosts.
+2. **Bandwidth per peer.** Sustained throughput divides across active peers. 100 Mbps shared across 50 active peers leaves ~2 Mbps each — fine for browsing, tight for streaming. Right-size for the use case.
+3. **WireGuard peer count.** Kernel WireGuard handles thousands of peers per interface; in practice the bandwidth ceiling hits first.
+
+The `[listing.capacity]` field on the kind-30402 listing is informational only — buyers see it as an advertised ceiling but the daemon does not enforce it. Real enforcement comes from the IP pool (`no-ip-available`) and from bandwidth saturation at the host.
+
+### 7.5 Legal considerations
 
 Running an exit VPN means traffic from anyone you serve appears to come from your IP. This carries legal exposure:
 
@@ -958,7 +979,7 @@ The marketplace doesn't add protocol-level mitigation for this. Operators handle
 
 Operators are advised to understand their local legal exposure before running an exit VPN.
 
-### 7.4 Multi-region operators
+### 7.6 Multi-region operators
 
 A single operator may run servers in multiple regions. Recommended pattern: one listing per region, each with its own `d` tag, geohash, and `kind: 11111` transport endpoint. This lets clients filter by region and the operator track sessions per location.
 

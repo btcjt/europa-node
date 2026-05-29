@@ -16,6 +16,26 @@ managed product.
 
 ---
 
+## System requirements
+
+- **Linux host** with a public IPv4. WireGuard kernel module (default
+  on Linux ≥ 5.6).
+- **1 vCPU, 1 GB RAM, 10 GB disk** — minimum, runs the daemon +
+  phoenixd up to ~100 Mbps sustained.
+- **2 vCPU, 2 GB RAM, 25 GB disk** — comfortable for 1 Gbps + several
+  hundred active peers + Lightning and ecash side-by-side.
+- **Bandwidth**: VPN traffic is sustained. 100 Mbps = ~32 TB/month, 1
+  Gbps = ~324 TB/month. Pick a VPS plan with enough quota or an
+  unmetered provider.
+- **Concurrent peers**: capped by the WireGuard subnet —
+  `10.66.42.0/24` (default) holds 253; widen to `/22` for ~1,000 or
+  `/16` for ~65k. Kernel WireGuard handles thousands of peers per
+  interface; bandwidth is what runs out first.
+
+Full sizing + tradeoffs: [`docs/spec.md` §7](docs/spec.md#7-hosting-considerations).
+
+---
+
 ## Quick start (Docker Compose)
 
 Easiest path. On any Linux host with Docker, a public DNS name,
