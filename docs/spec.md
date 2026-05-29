@@ -859,6 +859,24 @@ console.log('P2PK privkey (keep secret):', Buffer.from(privkey).toString('hex'))
 
 Store securely. If lost, future incoming tokens can't be swapped — they're effectively burned. Backup the privkey.
 
+### 5.5 Choosing or running a Cashu mint
+
+You list one or more mint URLs in your `payment` tags. Buyers use those mints — both the *fact that they have a balance there* and *the fees they pay to move sats around* are set by the mint, not by your daemon. Three classes of choice:
+
+**Use an existing public mint** (`mint.westernbtc.com`, etc.). Simplest. You don't operate the mint; its config is whatever the operator picked. Check `/v1/info` and `/v1/keysets` of the mint you're considering before you publish a listing pointing at it — buyers are inheriting that mint's policies and fees.
+
+**Run your own mint paired with your europa-node.** Most operational complexity but maximum control. Recommended only if you understand Cashu well enough to debug both sides. If you do, these three settings shape the buyer experience and are easy to miss:
+
+- **CORS on the mint.** Distinct from the CORS requirement on your daemon ([§3.1](#cors-requirement)). Buyers' browsers POST to your mint's `/v1/mint/quote/bolt11`, `/v1/mint/bolt11`, `/v1/swap`, `/v1/melt`, etc. from `europa.westernbtc.com` (or any directory site / fork). Without CORS, every browser-based deposit and pay attempt fails with a Same-Origin Policy error — `curl` still works, so it's easy to miss in operator-side testing. Allow the directory site origin(s) at minimum; allowing `*` is also fine for a public mint.
+
+- **`input_fee_ppk = 0`** (nutshell config). Default in many mint distributions is non-zero (nutshell's default is `100`, meaning 100 ppk = 0.01% per input proof). For VPN-marketplace use — small per-hour purchases and frequent swaps — even small per-proof fees drain buyer balances visibly. A buyer who deposits 1000 sat sees only 990 after a few operations and assumes the wallet is broken. **Set `input_fee_ppk = 0`** unless you have a specific reason to charge fees.
+
+- **Rotate the keyset after changing fees.** When `input_fee_ppk` changes, existing proofs still circulate with the old keyset's behavior. Rotate to a new keyset (NUT-02) so the new fee policy applies cleanly going forward. Buyers swap their old-keyset proofs for new-keyset proofs on next use.
+
+This bit of operator knowledge surfaced from a real fix-the-wallet-amount-bug 2026-05-28 in the wild: a buyer's deposit amount kept coming up "wrong" because the operator's mint had defaults `input_fee_ppk=100` and a stale keyset.
+
+A mint that gets all three of these right is otherwise invisible to buyers — the wallet "just works." A mint that misses any one of them generates support requests that look like europa-node bugs but aren't.
+
 ---
 
 ## 6. TLS and Reverse Proxy
