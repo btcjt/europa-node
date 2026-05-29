@@ -286,6 +286,8 @@ add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Cashu'
 if ($request_method = OPTIONS) { return 204; }
 ```
 
+**Don't double-set the headers.** If both the daemon and the proxy emit `Access-Control-Allow-Origin`, the browser receives a header value like `https://europa.westernbtc.com, *` (or two separate `Access-Control-Allow-Origin` lines) and rejects the response as having an invalid origin — *even though `curl` may look fine because `curl` ignores duplicates*. Pick one layer to own CORS: if you front the daemon with nginx/Caddy and let the proxy set the headers, use nginx's `proxy_hide_header Access-Control-Allow-Origin` (or Caddy's equivalent) to strip whatever the daemon emitted before re-adding the proxy's version. The simplest path is: let `europa-node` emit them and don't add any in the proxy.
+
 With Caddy:
 
 ```
@@ -876,6 +878,8 @@ You list one or more mint URLs in your `payment` tags. Buyers use those mints �
 This bit of operator knowledge surfaced from a real fix-the-wallet-amount-bug 2026-05-28 in the wild: a buyer's deposit amount kept coming up "wrong" because the operator's mint had defaults `input_fee_ppk=100` and a stale keyset.
 
 A mint that gets all three of these right is otherwise invisible to buyers — the wallet "just works." A mint that misses any one of them generates support requests that look like europa-node bugs but aren't.
+
+**Mounting the mint at a sub-path is supported but mind the trailing slash.** If your nginx serves the mint at `https://yourhost.com/cashu/…` (proxying to a Cashu daemon listening on localhost), publish the mint URL as `https://yourhost.com/cashu` (no trailing slash). Older versions of europa-website used `new URL('/v1/info', mintUrl)` to construct the probe URL, which strips the sub-path and probed `https://yourhost.com/v1/info` instead. Both the directory probe and the operator-diagnose page now use a path-preserving join (fixed 2026-05-29). Root-mounted mints (`https://mint.yourhost.com`) sidestep that whole class of bug and are easier to debug, so prefer a dedicated subdomain when you can.
 
 ---
 
