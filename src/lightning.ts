@@ -88,10 +88,26 @@ export class PhoenixdBackend implements LightningBackend {
     if (!data.serialized || !data.paymentHash) {
       throw new Error('phoenixd createinvoice missing fields');
     }
+    const incomingRes = await fetch(
+      `${this.baseUrl.replace(/\/$/, '')}/payments/incoming/${data.paymentHash}`,
+      { headers: { Authorization: this.auth() } },
+    );
+    if (!incomingRes.ok) {
+      const txt = await incomingRes.text().catch(() => '');
+      throw new Error(`phoenixd incoming payment lookup ${incomingRes.status}: ${txt}`);
+    }
+
+    const incoming = (await incomingRes.json()) as {
+      preimage?: string;
+    };
+    if (!incoming.preimage || !/^[0-9a-fA-F]{64}$/.test(incoming.preimage)) {
+      throw new Error('phoenixd incoming payment lookup missing valid preimage');
+    }
+
     return {
       bolt11: data.serialized,
       paymentHash: data.paymentHash,
-      preimage: opts.preimage.toString('hex'),
+      preimage: incoming.preimage,
     };
   }
 
