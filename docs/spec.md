@@ -80,9 +80,11 @@ PrivateKey = <contents of /etc/wireguard/server.key>
 Address = 10.66.42.1/24
 ListenPort = 51820
 
-# IP forwarding and NAT
-PostUp   = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+# IP forwarding, NAT, and peer isolation — see "Peer isolation" below.
+# Do NOT substitute the bare `-i wg0 -j ACCEPT` + blanket MASQUERADE
+# recipe: it forwards peers onto your own LAN.
+PostUp   = /etc/wireguard/wg-firewall.sh up %i eth0
+PostDown = /etc/wireguard/wg-firewall.sh down %i eth0
 
 # Peers are added dynamically by the operator daemon
 ```
@@ -112,6 +114,58 @@ systemctl enable --now wg-quick@wg0
 ufw allow 51820/udp
 ufw allow 443/tcp   # for the operator daemon's HTTPS endpoint
 ```
+
+#### Peer isolation (required)
+
+§4 has the operator hand each buyer a config with
+`AllowedIPs = 0.0.0.0/0, ::/0`. That is deliberate — a full tunnel is
+the product — but it means peers send you traffic for *every*
+destination, private ranges included. An operator whose only forwarding
+rule is `iptables -A FORWARD -i wg0 -j ACCEPT` plus a blanket
+`MASQUERADE` is therefore routing paying strangers onto their own
+network.
+
+What that reaches, in practice: the operator's router admin interface,
+printers and NAS boxes, hypervisor management, `169.254.169.254` cloud
+metadata (instance credentials on AWS/GCP), and — for anyone hosting on
+a Kubernetes node — the kube-apiserver, the pod network, and every
+ClusterIP Service that assumes it is unreachable from outside. If the
+operator runs a Lightning or Bitcoin node on the same LAN, its RPC is
+in that blast radius too.
+
+An implementation MUST confine peers to public destinations. The
+reference implementation ships
+[`scripts/wg-firewall.sh`](../scripts/wg-firewall.sh), which:
+
+1. **Rejects** traffic arriving on the tunnel that is destined for
+   `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`,
+   `100.64.0.0/10`, `127.0.0.0/8`, `224.0.0.0/4`, `240.0.0.0/4`
+   (and `fc00::/7`, `fe80::/10`, `::1/128` for IPv6), then accepts the
+   rest.
+2. **Scopes** the NAT rule to the peer subnet rather than masquerading
+   everything leaving the egress interface.
+3. **Drops** unsolicited traffic toward peers, permitting only
+   `RELATED,ESTABLISHED` return flows.
+4. **Blocks** peers from reaching services bound on the host itself.
+
+Peer-to-peer traffic is denied as a consequence of rule 1, since the
+tunnel subnet is itself RFC1918 — customers cannot scan one another.
+
+Two traps worth stating explicitly, because both produce a
+configuration that looks correct and is not:
+
+- The `FORWARD` chain's default policy is typically `ACCEPT`. Removing
+  the permissive rule does not deny anything; the reject rules must be
+  present and must be evaluated *before* any ACCEPT a CNI or Docker has
+  installed. Insert at the head of the chain rather than appending.
+- Hosts may have both nft-backed and legacy iptables tables populated.
+  Rules must be written to whichever table the kernel is actually
+  consulting for this path — compare `iptables -S FORWARD` against
+  `iptables-legacy -S FORWARD` before trusting either.
+
+Operators SHOULD verify the result empirically rather than by reading
+the ruleset: from a connected peer, a private-range destination must
+fail and a public one must succeed.
 
 ### 2.2 OpenVPN (optional)
 

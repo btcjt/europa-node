@@ -69,15 +69,18 @@ sudo apt install -y wireguard-tools openssl nodejs   # Debian/Ubuntu
 #    on most cloud VMs but `enp0s31f6` / `wlp3s0` / etc. on bare metal
 #    and `ens5` on AWS Nitro. Hardcoding `eth0` breaks MASQUERADE on
 #    every other host.
+#    wg-firewall.sh confines your customers to the public internet.
+#    Without it they can reach your LAN — see "Peer isolation" below.
 DEFIFACE=$(ip route show default | awk '{print $5; exit}')
 sudo install -m 600 ./secrets/wg-server.key /etc/wireguard/server.key
+sudo install -m 700 ./scripts/wg-firewall.sh /etc/wireguard/wg-firewall.sh
 sudo tee /etc/wireguard/wg0.conf <<CONF
 [Interface]
 PrivateKey = $(sudo cat /etc/wireguard/server.key)
 Address    = 10.66.42.1/24
 ListenPort = 51820
-PostUp     = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o $DEFIFACE -j MASQUERADE
-PostDown   = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o $DEFIFACE -j MASQUERADE
+PostUp     = /etc/wireguard/wg-firewall.sh up %i $DEFIFACE
+PostDown   = /etc/wireguard/wg-firewall.sh down %i $DEFIFACE
 CONF
 echo 'net.ipv4.ip_forward = 1' | sudo tee /etc/sysctl.d/99-wg.conf
 sudo sysctl -p /etc/sysctl.d/99-wg.conf
@@ -93,6 +96,59 @@ docker compose logs -f europa-node
 Within ~30 seconds you'll see `event: listing-published` in the
 log and your operator shows up in any directory that subscribes to
 the protocol.
+
+### Peer isolation — don't skip step 4's `wg-firewall.sh`
+
+Every config you hand a customer carries
+`AllowedIPs = 0.0.0.0/0, ::/0` (see [`src/configGen.ts`](src/configGen.ts)).
+A full tunnel is the product — but it also means customers send you
+traffic for *every* destination, private ranges included. The textbook
+one-liner you'll find in most WireGuard guides —
+
+```ini
+PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+```
+
+— forwards those too. It sells internet egress and gives away your
+intranet. Anything your host can route to is then reachable by anyone
+who bought an hour: your router's admin page, your NAS, your
+hypervisor, `169.254.169.254` cloud metadata (instance credentials on
+AWS/GCP), and, if you host on a Kubernetes node, the API server plus
+every internal Service. Running a Bitcoin or Lightning node on the
+same LAN puts its RPC in reach as well. No exploit required — just an
+IP address.
+
+[`scripts/wg-firewall.sh`](scripts/wg-firewall.sh) replaces that
+one-liner. It rejects RFC1918 / CGNAT / link-local / loopback /
+multicast destinations coming off the tunnel, allows the public
+internet, scopes `MASQUERADE` to your peer subnet rather than the whole
+egress interface, drops unsolicited traffic toward peers, and blocks
+peers from reaching services on the host itself. Customers also can't
+reach each other, since the tunnel subnet is itself RFC1918.
+
+Check it on a running node:
+
+```bash
+sudo iptables -S FORWARD | head -3          # wg0 rules sit at the top
+sudo iptables -S EUROPA-wg0-FWD             # the reject list
+sudo iptables -t nat -S POSTROUTING | grep MASQ  # scoped to your subnet
+```
+
+Better, verify from a connected client: a private-range address must
+fail, a public one must succeed.
+
+Two traps that produce a config which *looks* right and isn't:
+
+- **`FORWARD`'s default policy is normally `ACCEPT`.** Just deleting
+  the permissive rule denies nothing. You need explicit rejects, placed
+  ahead of any ACCEPT your CNI or Docker installed — hence the
+  insert-at-position-1 in the script.
+- **Some hosts populate both the nft and legacy iptables tables.** If
+  your rules go to the table the kernel isn't consulting for this path,
+  you get a false sense of safety. Compare `iptables -S FORWARD` with
+  `iptables-legacy -S FORWARD`; if your existing rules are in the
+  legacy table, set `IPTABLES=iptables-legacy` on the `PostUp` /
+  `PostDown` lines.
 
 **Firewall checklist**:
 
@@ -405,6 +461,11 @@ not implemented here. Pull requests welcome.
   bare-metal and AWS Nitro use `enp0s31f6` / `wlp3s0` / `ens5` etc.
   Detect with `ip route show default | awk '{print $5; exit}'` and
   use that. The Quick start above does it dynamically.
+- **A forwarding rule that only says `-i wg0 -j ACCEPT` hands your
+  customers your LAN.** This is the one misconfiguration on this page
+  that costs you more than a broken tunnel. Use
+  [`scripts/wg-firewall.sh`](scripts/wg-firewall.sh) and read
+  "Peer isolation" above.
 - **Don't reuse a CIDR that's already on the host.** The default
   `subnet_cidr` is `10.66.42.0/24` for a reason — the obvious-looking
   `10.42.0.0/24` collides with K3s' Flannel pod network and silently
