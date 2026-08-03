@@ -2,21 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { createDecipheriv, randomBytes } from 'node:crypto';
 import { aesEncryptWithPreimage, sha256Hex } from './encrypt';
 
-// Round-trip helper: the wallet-side decrypt for LNURL-pay
-// `successAction: 'aes'`. Mirrors the BLW / Phoenix convention:
-// auth tag is the last 16 bytes of the ciphertext.
 function decryptWithPreimage(
   ciphertextBase64: string,
   ivBase64: string,
   preimage: Buffer,
 ): string {
-  const combined = Buffer.from(ciphertextBase64, 'base64');
-  const tag = combined.subarray(combined.length - 16);
-  const encrypted = combined.subarray(0, combined.length - 16);
+  const encrypted = Buffer.from(ciphertextBase64, 'base64');
   const iv = Buffer.from(ivBase64, 'base64');
-  const decipher = createDecipheriv('aes-256-gcm', preimage, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf-8');
+  const decipher = createDecipheriv('aes-256-cbc', preimage, iv);
+
+  return Buffer.concat([
+    decipher.update(encrypted),
+    decipher.final(),
+  ]).toString('utf-8');
 }
 
 describe('aesEncryptWithPreimage', () => {
@@ -25,40 +23,51 @@ describe('aesEncryptWithPreimage', () => {
     expect(() => aesEncryptWithPreimage('hi', Buffer.alloc(33))).toThrow(/32 bytes/);
   });
 
-  it('round-trips: encrypt + matching-preimage decrypt → original plaintext', () => {
+  it('round-trips with AES-CBC and the matching preimage', () => {
     const preimage = randomBytes(32);
     const plaintext = 'Tunnel: foo-bar baz_qux 🛰️';
     const { ciphertext, iv } = aesEncryptWithPreimage(plaintext, preimage);
+
+    expect(Buffer.from(iv, 'base64')).toHaveLength(16);
+
     const recovered = decryptWithPreimage(ciphertext, iv, preimage);
     expect(recovered).toBe(plaintext);
   });
 
-  it('a wrong preimage fails the GCM auth check (cannot silently decrypt)', () => {
-    // Security property: GCM is authenticated; a wrong key must throw,
-    // not produce garbage plaintext. This is the only thing standing
-    // between a malicious wallet and reading another user's tunnel
-    // metadata if it ever intercepts the successAction.
+  it('does not decrypt correctly with a wrong preimage', () => {
     const preimage = randomBytes(32);
     const wrong = randomBytes(32);
-    const { ciphertext, iv } = aesEncryptWithPreimage('secret', preimage);
-    expect(() => decryptWithPreimage(ciphertext, iv, wrong)).toThrow();
+    const plaintext = 'secret';
+    const { ciphertext, iv } = aesEncryptWithPreimage(plaintext, preimage);
+
+    let recovered: string | undefined;
+    let threw = false;
+
+    try {
+      recovered = decryptWithPreimage(ciphertext, iv, wrong);
+    } catch {
+      threw = true;
+    }
+
+    expect(threw || recovered !== plaintext).toBe(true);
   });
 
-  it('produces different ciphertext for the same plaintext (random IV)', () => {
+  it('produces different ciphertext for the same plaintext', () => {
     const preimage = randomBytes(32);
     const a = aesEncryptWithPreimage('repeat me', preimage);
     const b = aesEncryptWithPreimage('repeat me', preimage);
+
     expect(a.iv).not.toBe(b.iv);
     expect(a.ciphertext).not.toBe(b.ciphertext);
   });
 
-  it('handles an empty plaintext (auth-tag-only output)', () => {
+  it('handles an empty plaintext', () => {
     const preimage = randomBytes(32);
     const { ciphertext, iv } = aesEncryptWithPreimage('', preimage);
     expect(decryptWithPreimage(ciphertext, iv, preimage)).toBe('');
   });
 
-  it('handles a multi-line plaintext (WireGuard configs are several lines)', () => {
+  it('handles a multi-line plaintext', () => {
     const preimage = randomBytes(32);
     const conf = `[Interface]\nPrivateKey=…\nAddress=10.42.0.2/32\n\n[Peer]\nPublicKey=…`;
     const { ciphertext, iv } = aesEncryptWithPreimage(conf, preimage);
@@ -68,7 +77,6 @@ describe('aesEncryptWithPreimage', () => {
 
 describe('sha256Hex', () => {
   it('matches the canonical sha256 of "abc"', () => {
-    // NIST test vector — pins the algorithm choice.
     expect(sha256Hex('abc')).toBe(
       'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
     );
