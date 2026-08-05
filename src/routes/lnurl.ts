@@ -191,7 +191,10 @@ export function registerLnurlRoutes(app: FastifyInstance, deps: LnurlRouteDeps):
       status: 'pending',
       last_rx_counter: 0,
       last_tx_counter: 0,
-      payment_hash: paymentHash,
+      // Store the payment hash from the backend-created invoice.
+      // Phoenixd returns its own invoice payment hash; settlement polling
+      // must check the hash for the actual payable invoice.
+      payment_hash: invoice.paymentHash || paymentHash,
       listing_d_tag: deps.config.listing.d_tag,
     });
 
